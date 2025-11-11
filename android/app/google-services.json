@@ -1,0 +1,31 @@
+{
+  "project_info": {
+    "project_number": "536013684311",
+    "firebase_url": "https://raspberrypi-f5471-default-rtdb.firebaseio.com",
+    "project_id": "raspberrypi-f5471",
+    "storage_bucket": "raspberrypi-f5471.firebasestorage.app"
+    
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:536013684311:android:421c979a17e21e1a032d12",
+        "android_client_info": {
+          "package_name": "com.example.demo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDrPloOn8zquqoyZqaCNZuGlgvxPuzxwxQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

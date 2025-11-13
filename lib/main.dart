@@ -11,6 +11,7 @@ import 'package:intl/intl.dart';
 import 'package:camera/camera.dart';
 import 'dart:io';
 import 'dart:convert';
+import 'dart:async'; // เพิ่มบรรทัดนี้
 
 import 'firebase_options.dart';
 
@@ -2161,7 +2162,7 @@ class _SettingsPageState extends State<SettingsPage> {
 }
 
 // -----------------------------------------------------------------------------
-// FACE REGISTRATION CAMERA PAGE
+// FACE REGISTRATION CAMERA PAGE - AUTO CAPTURE 60 IMAGES
 // -----------------------------------------------------------------------------
 class FaceRegistrationCameraPage extends StatefulWidget {
   @override
@@ -2176,8 +2177,9 @@ class _FaceRegistrationCameraPageState
   bool _isCameraReady = false;
   bool _isCapturing = false;
   bool _isProcessing = false;
-  int _captureStep = 1;
-  final int _totalSteps = 60;
+  int _currentImageCount = 0;
+  final int _targetImageCount = 60;
+  Timer? _captureTimer;
 
   // เก็บรูปภาพเป็น Base64
   List<String> _base64Images = [];
@@ -2224,14 +2226,8 @@ class _FaceRegistrationCameraPageState
   // แปลงรูปภาพเป็น Base64
   Future<String> _convertImageToBase64(File imageFile) async {
     try {
-      // อ่านไฟล์รูปภาพ
       final List<int> imageBytes = await imageFile.readAsBytes();
-
-      // แปลงเป็น Base64
       final String base64Image = base64Encode(imageBytes);
-
-      print('Image size: ${base64Image.length} characters');
-
       return base64Image;
     } catch (e) {
       print('Error converting image: $e');
@@ -2239,19 +2235,77 @@ class _FaceRegistrationCameraPageState
     }
   }
 
-  Future<void> _captureFace() async {
+  // เริ่มถ่ายภาพต่อเนื่อง
+  Future<void> _startContinuousCapture() async {
+    if (!_isCameraReady || _isCapturing) return;
+
+    setState(() {
+      _isCapturing = true;
+      _currentImageCount = 0;
+      _base64Images.clear();
+    });
+
+    // แจ้งผู้ใช้ให้ขยับใบหน้า
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Starting continuous capture - Please move your head slowly in different angles'),
+          duration: Duration(seconds: 5),
+        ),
+      );
+    }
+
+    // เริ่มถ่ายภาพทุก 0.5 วินาที
+    _captureTimer =
+        Timer.periodic(const Duration(milliseconds: 500), (timer) async {
+      if (_currentImageCount >= _targetImageCount) {
+        _stopContinuousCapture();
+        return;
+      }
+
+      await _captureSingleImage();
+    });
+  }
+
+  // หยุดถ่ายภาพต่อเนื่อง
+  void _stopContinuousCapture() {
+    _captureTimer?.cancel();
+    _captureTimer = null;
+
+    setState(() {
+      _isCapturing = false;
+    });
+
+    // แจ้งผู้ใช้เมื่อถ่ายภาพครบ
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Capture completed! $_currentImageCount images saved'),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+
+    // บันทึกข้อมูลเมื่อถ่ายภาพครบ
+    if (_currentImageCount >= _targetImageCount) {
+      _completeRegistration();
+    }
+  }
+
+  // ถ่ายภาพเดียว
+  Future<void> _captureSingleImage() async {
     if (!_isCameraReady ||
         _controller == null ||
         !_controller!.value.isInitialized) {
       return;
     }
 
-    setState(() {
-      _isCapturing = true;
-      _isProcessing = true;
-    });
-
     try {
+      setState(() {
+        _isProcessing = true;
+      });
+
       // ถ่ายรูป
       final XFile image = await _controller!.takePicture();
       final File imageFile = File(image.path);
@@ -2262,52 +2316,22 @@ class _FaceRegistrationCameraPageState
       // เก็บ Base64 image
       _base64Images.add(base64Image);
 
-      print('Image ${_base64Images.length} captured and converted to Base64');
+      // อัพเดทจำนวนภาพ
+      setState(() {
+        _currentImageCount = _base64Images.length;
+        _isProcessing = false;
+      });
+
+      print('Image $_currentImageCount captured and converted to Base64');
 
       // ลบไฟล์ชั่วคราว
       await imageFile.delete();
-
-      setState(() {
-        _isProcessing = false;
-      });
-
-      // ต่อไปยังขั้นตอนถัดไปหรือจบการลงทะเบียน
-      if (_captureStep < _totalSteps) {
-        setState(() {
-          _captureStep++;
-          _isCapturing = false;
-        });
-        _showNextStepInstructions();
-      } else {
-        await _completeRegistration();
-      }
     } catch (e) {
       debugPrint('Error capturing image: $e');
-      _showError('Error: ${e.toString()}');
       setState(() {
-        _isCapturing = false;
         _isProcessing = false;
       });
     }
-  }
-
-  void _showNextStepInstructions() {
-    String instruction = '';
-    switch (_captureStep) {
-      case 2:
-        instruction = 'Great! Now turn your head slightly to the LEFT';
-        break;
-      case 3:
-        instruction = 'Perfect! Now turn your head slightly to the RIGHT';
-        break;
-    }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(instruction),
-        duration: Duration(seconds: 3),
-      ),
-    );
   }
 
   Future<void> _completeRegistration() async {
@@ -2318,6 +2342,10 @@ class _FaceRegistrationCameraPageState
     }
 
     try {
+      setState(() {
+        _isProcessing = true;
+      });
+
       // บันทึกข้อมูลลง Firebase Database
       final DatabaseReference userRef =
           FirebaseDatabase.instance.ref('users/${user.uid}');
@@ -2330,6 +2358,7 @@ class _FaceRegistrationCameraPageState
           'base64': _base64Images[i],
           'timestamp': DateTime.now().millisecondsSinceEpoch + i,
           'size': _base64Images[i].length,
+          'angle': _getAngleDescription(i),
         };
       }
 
@@ -2338,20 +2367,24 @@ class _FaceRegistrationCameraPageState
         'faceRegistrationDate': ServerValue.timestamp,
         'faceImages': faceImagesData,
         'totalFaceImages': _base64Images.length,
+        'targetImages': _targetImageCount,
         'lastFaceUpdate': ServerValue.timestamp,
         'registrationComplete': true,
+        'registrationMethod': 'continuous_capture',
+      });
+
+      setState(() {
+        _isProcessing = false;
       });
 
       // แจ้งผลสำเร็จ
       if (mounted) {
-        Navigator.pop(context);
-
         showDialog(
           context: context,
           barrierDismissible: false,
           builder: (BuildContext context) {
             return AlertDialog(
-              title: Row(
+              title: const Row(
                 children: [
                   Icon(Icons.check_circle, color: Colors.green),
                   SizedBox(width: 8),
@@ -2361,25 +2394,32 @@ class _FaceRegistrationCameraPageState
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('Face registration completed successfully!'),
-                  SizedBox(height: 16),
+                  const Text('Face registration completed successfully!'),
+                  const SizedBox(height: 16),
                   Text(
-                    '${_base64Images.length} images saved to database.',
-                    style: TextStyle(color: Colors.green),
+                    '$_currentImageCount images saved to database.',
+                    style: const TextStyle(color: Colors.green),
                   ),
-                  SizedBox(height: 8),
+                  const SizedBox(height: 8),
                   Text(
                     'Total data size: ${_calculateTotalSize()} KB',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Your face is now registered for smart access.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 14),
                   ),
                 ],
               ),
               actions: [
                 TextButton(
                   onPressed: () {
-                    Navigator.pop(context);
+                    Navigator.pop(context); // ปิด dialog
+                    Navigator.pop(context); // กลับไปหน้า settings
                   },
-                  child: Text('OK'),
+                  child: const Text('OK'),
                 ),
               ],
             );
@@ -2387,8 +2427,18 @@ class _FaceRegistrationCameraPageState
         );
       }
     } catch (e) {
+      setState(() {
+        _isProcessing = false;
+      });
       _showError('Failed to complete registration: $e');
     }
+  }
+
+  // คำอธิบายมุมการถ่ายภาพ
+  String _getAngleDescription(int index) {
+    if (index < 20) return 'front';
+    if (index < 40) return 'left_side';
+    return 'right_side';
   }
 
   String _calculateTotalSize() {
@@ -2405,26 +2455,15 @@ class _FaceRegistrationCameraPageState
         SnackBar(
           content: Text(message),
           backgroundColor: Colors.red,
+          duration: const Duration(seconds: 5),
         ),
       );
     }
   }
 
-  String get _currentInstruction {
-    switch (_captureStep) {
-      case 1:
-        return 'Look straight at the camera\nKeep your face in the circle';
-      case 2:
-        return 'Turn your head slightly to the LEFT';
-      case 3:
-        return 'Turn your head slightly to the RIGHT';
-      default:
-        return 'Look straight at the camera';
-    }
-  }
-
   @override
   void dispose() {
+    _captureTimer?.cancel();
     _controller?.dispose();
     super.dispose();
   }
@@ -2433,10 +2472,10 @@ class _FaceRegistrationCameraPageState
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Face Registration'),
+        title: const Text('Face Registration'),
         backgroundColor: Colors.teal,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back),
+          icon: const Icon(Icons.arrow_back),
           onPressed: () {
             if (_base64Images.isNotEmpty) {
               _showExitConfirmation();
@@ -2450,27 +2489,39 @@ class _FaceRegistrationCameraPageState
         children: [
           // Progress Indicator
           LinearProgressIndicator(
-            value: _captureStep / _totalSteps,
+            value: _currentImageCount / _targetImageCount,
             backgroundColor: Colors.grey[300],
             valueColor: AlwaysStoppedAnimation<Color>(Colors.teal),
           ),
           Padding(
-            padding: EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(16.0),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Step $_captureStep of $_totalSteps',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+                  'Image $_currentImageCount of $_targetImageCount',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
-                Text('${((_captureStep / _totalSteps) * 100).round()}%'),
                 Text(
-                  '${_base64Images.length}/3',
-                  style: TextStyle(
-                    color: Colors.green,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                    '${((_currentImageCount / _targetImageCount) * 100).round()}%'),
+                _isCapturing
+                    ? Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Text(
+                          'RECORDING',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      )
+                    : const Text('Ready'),
               ],
             ),
           ),
@@ -2492,40 +2543,80 @@ class _FaceRegistrationCameraPageState
                         return _buildCameraError();
                       }
                     } else {
-                      return Center(child: CircularProgressIndicator());
+                      return const Center(child: CircularProgressIndicator());
                     }
                   },
                 ),
 
                 // Face Guide Circle
                 Container(
-                  width: 200,
-                  height: 200,
+                  width: 250,
+                  height: 300,
                   decoration: BoxDecoration(
-                    shape: BoxShape.circle,
+                    shape: BoxShape.rectangle,
+                    borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                      color: Colors.white,
-                      width: 2,
+                      color: _isCapturing ? Colors.red : Colors.white,
+                      width: 3,
                     ),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.face,
+                        size: 60,
+                        color: _isCapturing
+                            ? Colors.red
+                            : Colors.white.withOpacity(0.8),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Position Face Here',
+                        style: TextStyle(
+                          color: _isCapturing ? Colors.red : Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
 
                 // Instructions
                 Positioned(
                   top: 20,
+                  left: 0,
+                  right: 0,
                   child: Container(
-                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
                     decoration: BoxDecoration(
                       color: Colors.black54,
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Text(
-                      _currentInstruction,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                      ),
+                    child: Column(
+                      children: [
+                        Text(
+                          _isCapturing
+                              ? 'Capturing... Move your head slowly\n$_currentImageCount/$_targetImageCount images'
+                              : 'Position your face in the frame\nThen start continuous capture',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                          ),
+                        ),
+                        if (!_isCapturing) ...[
+                          const SizedBox(height: 8),
+                          const Text(
+                            'We will automatically capture 60 images from different angles',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                 ),
@@ -2534,7 +2625,7 @@ class _FaceRegistrationCameraPageState
                 if (_isProcessing)
                   Container(
                     color: Colors.black54,
-                    child: Center(
+                    child: const Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -2558,13 +2649,13 @@ class _FaceRegistrationCameraPageState
             ),
           ),
 
-          // Capture Button & Status
+          // Control Buttons
           Expanded(
             flex: 1,
             child: Center(
-              child: _isCapturing
+              child: _isProcessing && !_isCapturing
                   ? _buildProcessingIndicator()
-                  : _buildCaptureButton(),
+                  : _buildControlButtons(),
             ),
           ),
         ],
@@ -2576,52 +2667,62 @@ class _FaceRegistrationCameraPageState
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(Icons.camera_alt, size: 64, color: Colors.grey),
-        SizedBox(height: 16),
-        Text('Camera not available'),
-        SizedBox(height: 8),
+        const Icon(Icons.camera_alt, size: 64, color: Colors.grey),
+        const SizedBox(height: 16),
+        const Text('Camera not available'),
+        const SizedBox(height: 8),
         ElevatedButton(
           onPressed: _initializeCamera,
-          child: Text('Retry'),
+          child: const Text('Retry'),
         ),
       ],
     );
   }
 
   Widget _buildProcessingIndicator() {
-    return Column(
+    return const Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         CircularProgressIndicator(),
         SizedBox(height: 16),
         Text(
-          'Processing image...',
+          'Saving to database...',
           style: TextStyle(fontSize: 16),
         ),
       ],
     );
   }
 
-  Widget _buildCaptureButton() {
+  Widget _buildControlButtons() {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        FloatingActionButton.large(
-          onPressed: _isCameraReady ? _captureFace : null,
-          backgroundColor: Colors.teal,
-          foregroundColor: Colors.white,
-          child: Icon(Icons.camera_alt, size: 36),
-        ),
-        SizedBox(height: 16),
+        if (!_isCapturing)
+          FloatingActionButton.large(
+            onPressed: _isCameraReady ? _startContinuousCapture : null,
+            backgroundColor: Colors.red,
+            foregroundColor: Colors.white,
+            child: const Icon(Icons.play_arrow, size: 36),
+          )
+        else
+          FloatingActionButton.large(
+            onPressed: _stopContinuousCapture,
+            backgroundColor: Colors.red,
+            foregroundColor: Colors.white,
+            child: const Icon(Icons.stop, size: 36),
+          ),
+        const SizedBox(height: 16),
         Text(
-          'Tap to capture',
-          style: TextStyle(fontSize: 16),
+          _isCapturing
+              ? 'Tap to stop capture'
+              : 'Tap to start continuous capture',
+          style: const TextStyle(fontSize: 16),
         ),
-        if (_base64Images.isNotEmpty) ...[
-          SizedBox(height: 8),
+        if (_base64Images.isNotEmpty && !_isCapturing) ...[
+          const SizedBox(height: 8),
           Text(
-            '${_base64Images.length}/3 images saved',
-            style: TextStyle(
+            '$_currentImageCount images ready',
+            style: const TextStyle(
               fontSize: 14,
               color: Colors.green,
               fontWeight: FontWeight.bold,
@@ -2636,20 +2737,20 @@ class _FaceRegistrationCameraPageState
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Exit Registration?'),
+        title: const Text('Exit Registration?'),
         content: Text(
-            'You have ${_base64Images.length} images saved. Are you sure you want to exit?'),
+            'You have $_currentImageCount images captured. Are you sure you want to exit?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Cancel'),
+            child: const Text('Cancel'),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
               Navigator.pop(context);
             },
-            child: Text('Exit', style: TextStyle(color: Colors.red)),
+            child: const Text('Exit', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),

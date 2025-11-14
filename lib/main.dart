@@ -11,7 +11,7 @@ import 'package:intl/intl.dart';
 import 'package:camera/camera.dart';
 import 'dart:io';
 import 'dart:convert';
-import 'dart:async'; // เพิ่มบรรทัดนี้
+import 'dart:async';
 
 import 'firebase_options.dart';
 
@@ -244,7 +244,7 @@ class _LoginPageState extends State<LoginPage> {
 }
 
 // -----------------------------------------------------------------------------
-// REGISTER PAGE
+// REGISTER PAGE - Simplified with only Full Name
 // -----------------------------------------------------------------------------
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -261,12 +261,17 @@ class _RegisterPageState extends State<RegisterPage> {
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _loading = true);
+
     try {
+      // Create user with email and password
       final UserCredential userCredential = await FirebaseAuth.instance
           .createUserWithEmailAndPassword(email: email, password: password);
 
+      // Update display name
       await userCredential.user!
           .updateDisplayName(name.isEmpty ? 'User' : name);
+
+      // Create user profile in database
       await _createUserProfile(userCredential.user!);
 
       if (!mounted) return;
@@ -2759,7 +2764,7 @@ class _FaceRegistrationCameraPageState
 }
 
 // -----------------------------------------------------------------------------
-// PROFILE PAGE
+// PROFILE PAGE - Simplified without Username
 // -----------------------------------------------------------------------------
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});

@@ -1,0 +1,14 @@
+bat_den
+tat_den
+bat_quat
+tat_quat
+mo_cua
+dong_cua
+bat_tat_ca
+tat_tat_ca
+bat_den_phong_khach
+tat_den_phong_khach
+bat_den_phong_ngu
+tat_den_phong_ngu
+tat_den_phong_bep
+bat_den_phong_bep

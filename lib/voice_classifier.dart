@@ -22,22 +22,22 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  // Khởi tạo camera
+  // เริ่มต้นกล้อง
   try {
     cameras = await availableCameras();
   } on CameraException catch (e) {
-    debugPrint('Lỗi Camera: $e');
+    debugPrint('ข้อผิดพลาดกล้อง: $e');
   }
 
   runApp(const MyApp());
 }
 
 // -----------------------------------------------------------------------------
-// Phân loại giọng nói TFLite - COMPLETELY UPDATED VERSION
+// เครื่องมือจำแนกเสียง TFLite - VERSION ที่แก้ไขแล้ว
 // -----------------------------------------------------------------------------
 class VoiceClassifier {
-  static const String modelFile = 'model.tflite';
-  static const String labelFile = 'voice_labels.txt';
+  static const String modelFile = 'models/model.tflite';
+  static const String labelFile = 'models/voice_labels.txt';
 
   late Interpreter _interpreter;
   late List<String> _labels;
@@ -45,29 +45,29 @@ class VoiceClassifier {
 
   Future<void> loadModel() async {
     try {
-      // Tải model
+      // โหลดโมเดล
       _interpreter = await Interpreter.fromAsset(modelFile);
 
-      // Tải nhãn
+      // โหลดป้ายกำกับ
       _labels = await _loadLabelsFromAssets();
 
       _isLoaded = true;
-      debugPrint('Đã tải model giọng nói thành công');
-      debugPrint('Nhãn: $_labels');
+      debugPrint('โหลดโมเดลเสียงสำเร็จแล้ว');
+      debugPrint('ป้ายกำกับ: $_labels');
 
-      // Debug model info
+      // Debug ข้อมูลโมเดล
       var inputTensors = _interpreter.getInputTensors();
       var outputTensors = _interpreter.getOutputTensors();
       debugPrint('Input tensors: $inputTensors');
       debugPrint('Output tensors: $outputTensors');
     } catch (e) {
-      debugPrint('Lỗi tải model giọng nói: $e');
+      debugPrint('ข้อผิดพลาดในการโหลดโมเดลเสียง: $e');
       _isLoaded = false;
     }
   }
 
   Future<List<String>> _loadLabelsFromAssets() async {
-    // ใช้ labels ตามไฟล์ voice_labels.txt ของคุณ
+    // คืนค่าป้ายกำกับเริ่มต้น
     return [
       'bat_den',
       'tat_den',
@@ -79,20 +79,27 @@ class VoiceClassifier {
       'tat_tat_ca',
       'bat_den_phong_khach',
       'tat_den_phong_khach',
+      'tat_den_phong_ngu',
       'bat_den_phong_ngu',
-      'tat_den_phong_ngu'
+      'tat_den_phong_bep',
+      'bat_den_phong_bep',
     ];
   }
 
-  // Xử lý trước âm thanh - SIMPLIFIED VERSION
+  // ประมวลผลเสียงล่วงหน้า - VERSION ที่แก้ไขแล้ว
   List<List<double>> _preprocessAudio(List<double> audioData) {
     try {
-      const int inputLength = 16000; // Default for speech models
+      // รับรูปร่างอินพุตจริงจากโมเดล
+      final inputTensor = _interpreter.getInputTensors().first;
+      final inputShape = inputTensor.shape;
+      debugPrint('รูปร่างอินพุต: $inputShape');
 
-      // Tạo mảng 2D với hình dạng phù hợp cho model
+      const int inputLength = 16000; // ค่าเริ่มต้นสำหรับโมเดลเสียง
+
+      // สร้างอาร์เรย์ 2D ด้วยรูปร่างที่เหมาะสมสำหรับโมเดล
       List<List<double>> processedInput = [];
 
-      // Xử lý đơn giản - đệm hoặc cắt ngắn đến độ dài mong đợi
+      // การประมวลผลแบบง่าย - เติมหรือตัดให้มีความยาวตามที่คาดหวัง
       List<double> processedAudio = List<double>.filled(inputLength, 0.0);
       int length =
           audioData.length < inputLength ? audioData.length : inputLength;
@@ -101,92 +108,117 @@ class VoiceClassifier {
         processedAudio[i] = audioData[i];
       }
 
-      // Định hình lại cho đầu vào model
-      processedInput.add(processedAudio);
+      // ปรับรูปร่างใหม่สำหรับอินพุตโมเดลตามรูปร่างจริง
+      if (inputShape.length == 2) {
+        // รูปร่าง: [1, inputLength]
+        processedInput.add(processedAudio);
+      } else if (inputShape.length == 1) {
+        // รูปร่าง: [inputLength]
+        processedInput = [processedAudio];
+      }
 
       return processedInput;
     } catch (e) {
-      debugPrint('Lỗi xử lý âm thanh: $e');
+      debugPrint('ข้อผิดพลาดในการประมวลผลเสียง: $e');
       return [List<double>.filled(16000, 0.0)];
     }
   }
 
-  // Phân loại lệnh giọng nói từ đặc trưng âm thanh
+  // จำแนกคำสั่งเสียงจากคุณลักษณะเสียง - อัปเดตแล้ว
   Map<String, double> classifyVoiceCommand(List<double> audioFeatures) {
     if (!_isLoaded) {
-      debugPrint('Model chưa được tải');
+      debugPrint('โมเดลยังไม่โหลด');
       return {};
     }
 
     try {
-      // Xử lý trước âm thanh
+      // ประมวลผลเสียงล่วงหน้า
       final input = _preprocessAudio(audioFeatures);
 
-      // Chuẩn bị bộ đệm đầu ra
+      // เตรียมบัฟเฟอร์เอาต์พุต
       var outputBuffer = List<double>.filled(_labels.length, 0.0);
 
-      // Chạy suy luận
+      // เรียกใช้การอนุมาน - ใช้รูปแบบที่เรียบง่าย
       _interpreter.run(input, outputBuffer);
 
-      debugPrint('Kết quả raw: $outputBuffer');
+      debugPrint('ผลลัพธ์ดิบ: $outputBuffer');
 
-      // Xử lý kết quả
+      // ประมวลผลผลลัพธ์
       final Map<String, double> labeledProb = {};
 
       for (int i = 0; i < outputBuffer.length && i < _labels.length; i++) {
         labeledProb[_labels[i]] = outputBuffer[i];
       }
 
-      debugPrint('Kết quả phân loại: $labeledProb');
+      debugPrint('ผลการจำแนก: $labeledProb');
       return labeledProb;
     } catch (e) {
-      debugPrint('Lỗi trong quá trình phân loại giọng nói: $e');
+      debugPrint('ข้อผิดพลาดในกระบวนการจำแนกเสียง: $e');
       return {};
     }
   }
 
-  // Phân loại từ lệnh văn bản (dự phòng) - UPDATED FOR NEW LABELS
+  // จำแนกจากคำสั่งข้อความ (สำรอง)
   Map<String, double> classifyTextCommand(String textCommand) {
+    if (!_isLoaded) return {};
+
     final lowerCommand = textCommand.toLowerCase();
     Map<String, double> results = {};
 
-    // Khớp từ khóa với điểm tin cậy - UPDATED FOR NEW LABELS
-    if (lowerCommand.contains('bật đèn phòng khách') ||
-        lowerCommand.contains('mở đèn phòng khách')) {
-      results['bat_den_phong_khach'] = 0.95;
-    } else if (lowerCommand.contains('tắt đèn phòng khách') ||
-        lowerCommand.contains('đóng đèn phòng khách')) {
-      results['tat_den_phong_khach'] = 0.95;
-    } else if (lowerCommand.contains('bật đèn phòng ngủ') ||
-        lowerCommand.contains('mở đèn phòng ngủ')) {
-      results['bat_den_phong_ngu'] = 0.95;
-    } else if (lowerCommand.contains('tắt đèn phòng ngủ') ||
-        lowerCommand.contains('đóng đèn phòng ngủ')) {
-      results['tat_den_phong_ngu'] = 0.95;
-    } else if (lowerCommand.contains('bật đèn') ||
-        lowerCommand.contains('mở đèn')) {
-      results['bat_den'] = 0.90;
+    // จับคู่คำหลักด้วยคะแนนความเชื่อมั่น
+    if (lowerCommand.contains('bật đèn') || lowerCommand.contains('mở đèn')) {
+      results['bat_den'] = 0.95;
     } else if (lowerCommand.contains('tắt đèn') ||
         lowerCommand.contains('đóng đèn')) {
-      results['tat_den'] = 0.90;
+      results['tat_den'] = 0.95;
     } else if (lowerCommand.contains('bật quạt') ||
         lowerCommand.contains('mở quạt')) {
-      results['bat_quat'] = 0.85;
+      results['bat_quat'] = 0.90;
     } else if (lowerCommand.contains('tắt quạt') ||
         lowerCommand.contains('đóng quạt')) {
-      results['tat_quat'] = 0.85;
+      results['tat_quat'] = 0.90;
     } else if (lowerCommand.contains('mở cửa') ||
         lowerCommand.contains('mở khóa cửa')) {
-      results['mo_cua'] = 0.80;
+      results['mo_cua'] = 0.85;
     } else if (lowerCommand.contains('đóng cửa') ||
         lowerCommand.contains('khóa cửa')) {
-      results['dong_cua'] = 0.80;
+      results['dong_cua'] = 0.85;
     } else if (lowerCommand.contains('bật tất cả') ||
         lowerCommand.contains('mở tất cả')) {
-      results['bat_tat_ca'] = 0.75;
+      results['bat_tat_ca'] = 0.80;
     } else if (lowerCommand.contains('tắt tất cả') ||
         lowerCommand.contains('đóng tất cả')) {
-      results['tat_tat_ca'] = 0.75;
+      results['tat_tat_ca'] = 0.80;
+    } else if (lowerCommand.contains('phòng khách')) {
+      if (lowerCommand.contains('bật') || lowerCommand.contains('mở')) {
+        results['bat_den_phong_khach'] = 0.85;
+      } else if (lowerCommand.contains('tắt') ||
+          lowerCommand.contains('đóng')) {
+        results['tat_den_phong_khach'] = 0.85;
+      }
+    } else if (lowerCommand.contains('phòng ngủ')) {
+      if (lowerCommand.contains('bật') || lowerCommand.contains('mở')) {
+        results['bat_den_phong_ngu'] = 0.85;
+      } else if (lowerCommand.contains('tắt') ||
+          lowerCommand.contains('đóng')) {
+        results['tat_den_phong_ngu'] = 0.85;
+      }
+    } else if (lowerCommand.contains('phòng bếp')) {
+      if (lowerCommand.contains('bật') || lowerCommand.contains('mở')) {
+        results['bat_den_phong_bep'] = 0.85;
+      } else if (lowerCommand.contains('tắt') ||
+          lowerCommand.contains('đóng')) {
+        results['tat_den_phong_bep'] = 0.85;
+      }
+    } else if (lowerCommand.contains('bật camera') ||
+        lowerCommand.contains('mở camera')) {
+      results['bat_camera'] = 0.70;
+    } else if (lowerCommand.contains('tắt camera') ||
+        lowerCommand.contains('đóng camera')) {
+      results['tat_camera'] = 0.70;
+    } else if (lowerCommand.contains('trạng thái') ||
+        lowerCommand.contains('tình trạng')) {
+      results['trang_thai'] = 0.65;
     }
 
     return results;
@@ -218,15 +250,14 @@ class VoiceClassifier {
 }
 
 // -----------------------------------------------------------------------------
-// ỨNG DỤNG CHÍNH
+// แอปพลิเคชันหลัก
 // -----------------------------------------------------------------------------
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // แก้ไขจาก CardTheme เป็น CardThemeData
-    final cardStyle = CardThemeData(
+    final cardStyle = CardTheme(
       elevation: 4,
       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
       shape: RoundedRectangleBorder(
@@ -235,14 +266,20 @@ class MyApp extends StatelessWidget {
     );
 
     return MaterialApp(
-      title: 'Nhà Thông Minh Pro',
+      title: 'บ้านอัจฉริยะ Pro',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
         colorSchemeSeed: Colors.teal,
         scaffoldBackgroundColor: const Color(0xFFF4F6F9),
         appBarTheme: const AppBarTheme(backgroundColor: Colors.teal),
-        cardTheme: cardStyle,
+        cardTheme: const CardThemeData(
+          elevation: 4,
+          margin: EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(16)),
+          ),
+        ),
       ),
       home: StreamBuilder<User?>(
         stream: FirebaseAuth.instance.authStateChanges(),
@@ -263,7 +300,7 @@ class MyApp extends StatelessWidget {
 }
 
 // -----------------------------------------------------------------------------
-// TRANG ĐĂNG NHẬP
+// หน้าเข้าสู่ระบบ
 // -----------------------------------------------------------------------------
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -279,17 +316,39 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
+
+    if (!mounted) return;
     setState(() => _loading = true);
 
     try {
       final UserCredential userCredential = await FirebaseAuth.instance
-          .signInWithEmailAndPassword(email: email, password: password);
+          .signInWithEmailAndPassword(email: email, password: password)
+          .timeout(const Duration(seconds: 30));
 
       await _createUserProfile(userCredential.user!);
     } on FirebaseAuthException catch (e) {
+      String errorMessage = 'เข้าสู่ระบบล้มเหลว';
+      if (e.code == 'user-not-found') {
+        errorMessage = 'ไม่พบบัญชีผู้ใช้';
+      } else if (e.code == 'wrong-password') {
+        errorMessage = 'รหัสผ่านไม่ถูกต้อง';
+      } else if (e.code == 'network-request-failed') {
+        errorMessage = 'ข้อผิดพลาดในการเชื่อมต่อเครือข่าย';
+      }
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message ?? 'Đăng nhập thất bại')),
+        SnackBar(content: Text(errorMessage)),
+      );
+    } on TimeoutException catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('การเชื่อมต่อหมดเวลา')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('ข้อผิดพลาด: $e')),
       );
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -297,19 +356,23 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _createUserProfile(User user) async {
-    final DatabaseReference userRef =
-        FirebaseDatabase.instance.ref('users/${user.uid}');
-    final snapshot = await userRef.get();
+    try {
+      final DatabaseReference userRef =
+          FirebaseDatabase.instance.ref('users/${user.uid}');
+      final snapshot = await userRef.get();
 
-    if (!snapshot.exists) {
-      await userRef.set({
-        'name': user.displayName ?? 'Người dùng',
-        'email': user.email,
-        'phone': '',
-        'address': '',
-        'createdAt': ServerValue.timestamp,
-        'updatedAt': ServerValue.timestamp,
-      });
+      if (!snapshot.exists) {
+        await userRef.set({
+          'name': user.displayName ?? 'ผู้ใช้',
+          'email': user.email,
+          'phone': '',
+          'address': '',
+          'createdAt': ServerValue.timestamp,
+          'updatedAt': ServerValue.timestamp,
+        });
+      }
+    } catch (e) {
+      debugPrint('ข้อผิดพลาดในการสร้างโปรไฟล์ผู้ใช้: $e');
     }
   }
 
@@ -348,7 +411,7 @@ class _LoginPageState extends State<LoginPage> {
                     const Icon(Icons.home, size: 72, color: Colors.teal),
                     const SizedBox(height: 8),
                     const Text(
-                      'Nhà Thông Minh Pro',
+                      'บ้านอัจฉริยะ Pro',
                       style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
@@ -358,24 +421,24 @@ class _LoginPageState extends State<LoginPage> {
                     const SizedBox(height: 20),
                     TextFormField(
                       decoration: const InputDecoration(
-                        labelText: 'Email',
+                        labelText: 'อีเมล',
                         prefixIcon: Icon(Icons.email_outlined),
                       ),
                       keyboardType: TextInputType.emailAddress,
                       validator: (v) => v == null || v.isEmpty
-                          ? 'Vui lòng nhập email của bạn'
+                          ? 'กรุณากรอกอีเมลของคุณ'
                           : null,
                       onChanged: (v) => email = v.trim(),
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
                       decoration: const InputDecoration(
-                        labelText: 'Mật khẩu',
+                        labelText: 'รหัสผ่าน',
                         prefixIcon: Icon(Icons.lock_outline),
                       ),
                       obscureText: true,
                       validator: (v) => v == null || v.isEmpty
-                          ? 'Vui lòng nhập mật khẩu của bạn'
+                          ? 'กรุณากรอกรหัสผ่านของคุณ'
                           : null,
                       onChanged: (v) => password = v.trim(),
                     ),
@@ -395,7 +458,7 @@ class _LoginPageState extends State<LoginPage> {
                                 ),
                               ),
                               child: const Text(
-                                'ĐĂNG NHẬP',
+                                'เข้าสู่ระบบ',
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
@@ -415,7 +478,7 @@ class _LoginPageState extends State<LoginPage> {
                         );
                       },
                       child: const Text(
-                        "Chưa có tài khoản? Đăng ký",
+                        "ยังไม่มีบัญชี? ลงทะเบียน",
                         style: TextStyle(color: Colors.teal),
                       ),
                     )
@@ -431,7 +494,7 @@ class _LoginPageState extends State<LoginPage> {
 }
 
 // -----------------------------------------------------------------------------
-// TRANG ĐĂNG KÝ
+// หน้าลงทะเบียน
 // -----------------------------------------------------------------------------
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -447,24 +510,47 @@ class _RegisterPageState extends State<RegisterPage> {
 
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
+
+    if (!mounted) return;
     setState(() => _loading = true);
+
     try {
       final UserCredential userCredential = await FirebaseAuth.instance
-          .createUserWithEmailAndPassword(email: email, password: password);
+          .createUserWithEmailAndPassword(email: email, password: password)
+          .timeout(const Duration(seconds: 30));
 
       await userCredential.user!
-          .updateDisplayName(name.isEmpty ? 'Người dùng' : name);
+          .updateDisplayName(name.isEmpty ? 'ผู้ใช้' : name);
       await _createUserProfile(userCredential.user!);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Đăng ký thành công!')),
+        const SnackBar(content: Text('ลงทะเบียนสำเร็จ!')),
       );
       Navigator.pop(context);
     } on FirebaseAuthException catch (e) {
+      String errorMessage = 'ลงทะเบียนล้มเหลว';
+      if (e.code == 'email-already-in-use') {
+        errorMessage = 'อีเมลนี้ถูกใช้แล้ว';
+      } else if (e.code == 'weak-password') {
+        errorMessage = 'รหัสผ่านอ่อนเกินไป';
+      } else if (e.code == 'network-request-failed') {
+        errorMessage = 'ข้อผิดพลาดในการเชื่อมต่อเครือข่าย';
+      }
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message ?? 'Đăng ký thất bại')),
+        SnackBar(content: Text(errorMessage)),
+      );
+    } on TimeoutException catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('การเชื่อมต่อหมดเวลา')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('ข้อผิดพลาด: $e')),
       );
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -472,23 +558,27 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   Future<void> _createUserProfile(User user) async {
-    final DatabaseReference userRef =
-        FirebaseDatabase.instance.ref('users/${user.uid}');
-    await userRef.set({
-      'name': name.isEmpty ? 'Người dùng' : name,
-      'email': user.email,
-      'phone': '',
-      'address': '',
-      'createdAt': ServerValue.timestamp,
-      'updatedAt': ServerValue.timestamp,
-    });
+    try {
+      final DatabaseReference userRef =
+          FirebaseDatabase.instance.ref('users/${user.uid}');
+      await userRef.set({
+        'name': name.isEmpty ? 'ผู้ใช้' : name,
+        'email': user.email,
+        'phone': '',
+        'address': '',
+        'createdAt': ServerValue.timestamp,
+        'updatedAt': ServerValue.timestamp,
+      });
+    } catch (e) {
+      debugPrint('ข้อผิดพลาดในการสร้างโปรไฟล์ผู้ใช้: $e');
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Đăng ký'),
+        title: const Text('ลงทะเบียน'),
         backgroundColor: Colors.teal,
       ),
       body: Center(
@@ -513,38 +603,39 @@ class _RegisterPageState extends State<RegisterPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Text(
-                    'Tạo Tài Khoản',
+                    'สร้างบัญชี',
                     style: TextStyle(fontSize: 20, color: Colors.teal),
                   ),
                   const SizedBox(height: 14),
                   TextFormField(
                     decoration: const InputDecoration(
-                      labelText: 'Họ và tên',
+                      labelText: 'ชื่อและนามสกุล',
                       prefixIcon: Icon(Icons.person_outline),
                     ),
                     validator: (v) =>
-                        v == null || v.isEmpty ? 'Nhập tên của bạn' : null,
+                        v == null || v.isEmpty ? 'กรุณากรอกชื่อของคุณ' : null,
                     onChanged: (v) => name = v.trim(),
                   ),
                   const SizedBox(height: 10),
                   TextFormField(
                     decoration: const InputDecoration(
-                      labelText: 'Email',
+                      labelText: 'อีเมล',
                       prefixIcon: Icon(Icons.email_outlined),
                     ),
                     validator: (v) =>
-                        v == null || v.isEmpty ? 'Nhập email của bạn' : null,
+                        v == null || v.isEmpty ? 'กรุณากรอกอีเมลของคุณ' : null,
                     onChanged: (v) => email = v.trim(),
                   ),
                   const SizedBox(height: 10),
                   TextFormField(
                     decoration: const InputDecoration(
-                      labelText: 'Mật khẩu',
+                      labelText: 'รหัสผ่าน',
                       prefixIcon: Icon(Icons.lock_outline),
                     ),
                     obscureText: true,
-                    validator: (v) =>
-                        v == null || v.length < 6 ? 'Tối thiểu 6 ký tự' : null,
+                    validator: (v) => v == null || v.length < 6
+                        ? 'อย่างน้อย 6 ตัวอักษร'
+                        : null,
                     onChanged: (v) => password = v.trim(),
                   ),
                   const SizedBox(height: 16),
@@ -563,7 +654,7 @@ class _RegisterPageState extends State<RegisterPage> {
                             ),
                           ),
                           child: const Text(
-                            'Đăng ký',
+                            'ลงทะเบียน',
                             style: TextStyle(color: Colors.white),
                           ),
                         ),
@@ -578,7 +669,7 @@ class _RegisterPageState extends State<RegisterPage> {
 }
 
 // -----------------------------------------------------------------------------
-// TRANG CHỦ - Điều khiển giọng nói nâng cao với TFLite
+// หน้าหลัก - การควบคุมเสียงขั้นสูงด้วย TFLite
 // -----------------------------------------------------------------------------
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -595,7 +686,7 @@ class _HomePageState extends State<HomePage> {
       FirebaseDatabase.instance.ref('notifications');
   final DatabaseReference _cameraRef = FirebaseDatabase.instance.ref('camera');
 
-  // Trạng thái thiết bị
+  // สถานะอุปกรณ์
   bool isDoorOn = false;
   bool isLivingLightOn = false;
   bool isBedroomLightOn = false;
@@ -603,124 +694,146 @@ class _HomePageState extends State<HomePage> {
   bool isFanOn = false;
   bool isCameraOn = false;
 
-  // Cảm biến
+  // เซ็นเซอร์
   double? temperature;
   double? humidity;
 
-  // Nhận dạng giọng nói
+  // การรู้จำเสียง
   late stt.SpeechToText _speechToText;
   bool _speechEnabled = false;
   bool _isListening = false;
   String _lastWords = '';
 
-  // Phân loại giọng nói TFLite
+  // เครื่องมือจำแนกเสียง TFLite
   final VoiceClassifier _voiceClassifier = VoiceClassifier();
   bool _isModelLoaded = false;
   bool _useTFLite = true;
 
-  // Trình phát âm thanh
+  // เครื่องเล่นเสียง
   final AudioPlayer _audioPlayer = AudioPlayer();
 
-  // Danh sách thông báo
+  // รายการการแจ้งเตือน
   final List<Map<String, dynamic>> _notifications = [];
   int _unreadNotifications = 0;
+
+  // Listeners
+  StreamSubscription? _controlSubscription;
+  StreamSubscription? _sensorsSubscription;
+  StreamSubscription? _notificationsSubscription;
+  StreamSubscription? _cameraSubscription;
 
   @override
   void initState() {
     super.initState();
-    _listenControl();
-    _listenSensors();
-    _listenNotifications();
-    _listenCamera();
+    _initializeApp();
+  }
 
-    // Khởi tạo hệ thống giọng nói
+  Future<void> _initializeApp() async {
+    await _listenControl();
+    await _listenSensors();
+    await _listenNotifications();
+    await _listenCamera();
+
+    // เริ่มต้นระบบเสียง
     _speechToText = stt.SpeechToText();
-    _initSpeech();
-    _loadTFLiteModel();
+    await _initSpeech();
+    await _loadTFLiteModel();
   }
 
   Future<void> _loadTFLiteModel() async {
     try {
       await _voiceClassifier.loadModel();
+      if (!mounted) return;
+
       setState(() {
         _isModelLoaded = _voiceClassifier.isLoaded;
       });
 
       if (_isModelLoaded) {
-        debugPrint('Đã tải model TFLite thành công');
+        debugPrint('โหลดโมเดล TFLite สำเร็จแล้ว');
       } else {
-        debugPrint('Model TFLite tải thất bại');
+        debugPrint('โหลดโมเดล TFLite ล้มเหลว');
         setState(() {
           _useTFLite = false;
         });
       }
     } catch (e) {
-      debugPrint('Lỗi tải model TFLite: $e');
-      setState(() {
-        _isModelLoaded = false;
-        _useTFLite = false;
-      });
+      debugPrint('ข้อผิดพลาดในการโหลดโมเดล TFLite: $e');
+      if (mounted) {
+        setState(() {
+          _isModelLoaded = false;
+          _useTFLite = false;
+        });
+      }
     }
   }
 
-  /// Phát hiệu ứng âm thanh
+  /// เล่นเอฟเฟกต์เสียง
   Future<void> _playSound(String soundType) async {
     try {
-      if (soundType == 'switch_on') {
-        await _audioPlayer.play(AssetSource('sounds/switch_on.mp3'));
-      } else if (soundType == 'switch_off') {
-        await _audioPlayer.play(AssetSource('sounds/switch_off.mp3'));
-      } else if (soundType == 'voice_start') {
-        await _audioPlayer.play(AssetSource('sounds/voice_start.mp3'));
-      } else if (soundType == 'voice_stop') {
-        await _audioPlayer.play(AssetSource('sounds/voice_stop.mp3'));
-      } else if (soundType == 'camera_start') {
-        await _audioPlayer.play(AssetSource('sounds/camera_start.mp3'));
+      // ตรวจสอบว่าเครื่องเล่นเสียงพร้อมหรือไม่
+      if (_audioPlayer.state != PlayerState.playing) {
+        if (soundType == 'switch_on') {
+          await _audioPlayer.play(AssetSource('sounds/switch_on.mp3'));
+        } else if (soundType == 'switch_off') {
+          await _audioPlayer.play(AssetSource('sounds/switch_off.mp3'));
+        } else if (soundType == 'voice_start') {
+          await _audioPlayer.play(AssetSource('sounds/voice_start.mp3'));
+        } else if (soundType == 'voice_stop') {
+          await _audioPlayer.play(AssetSource('sounds/voice_stop.mp3'));
+        } else if (soundType == 'camera_start') {
+          await _audioPlayer.play(AssetSource('sounds/camera_start.mp3'));
+        }
       }
     } catch (e) {
-      debugPrint('Lỗi phát âm thanh: $e');
+      debugPrint('ข้อผิดพลาดในการเล่นเสียง: $e');
     }
   }
 
-  /// Khởi tạo dịch vụ nhận dạng giọng nói
+  /// เริ่มต้นบริการรู้จำเสียง
   Future<void> _initSpeech() async {
     _speechEnabled = await _speechToText.initialize();
+    if (!mounted) return;
+
     setState(() {});
     if (!_speechEnabled && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nhận dạng giọng nói không khả dụng.')),
+        const SnackBar(content: Text('การรู้จำเสียงไม่พร้อมใช้งาน')),
       );
     }
   }
 
-  /// Bắt đầu lắng nghe đầu vào giọng nói
+  /// เริ่มฟังอินพุตเสียง
   void _startListening() async {
     if (!_speechEnabled) return;
-    // await _playSound('voice_start');
+    await _playSound('voice_start');
 
+    if (!mounted) return;
     setState(() {
       _isListening = true;
-      _lastWords = _isModelLoaded && _useTFLite
-          ? 'AI đang lắng nghe...'
-          : 'Đang lắng nghe...';
+      _lastWords =
+          _isModelLoaded && _useTFLite ? 'AI กำลังฟัง...' : 'กำลังฟัง...';
     });
 
     await _speechToText.listen(
       onResult: _onSpeechResultWithTFLite,
-      localeId: 'vi_VN',
+      localeId: 'vi_VN', // เปลี่ยนเป็นภาษาเวียดนาม
       listenFor: const Duration(seconds: 10),
     );
   }
 
-  /// Dừng lắng nghe đầu vào giọng nói
+  /// หยุดฟังอินพุตเสียง
   void _stopListening() async {
     await _speechToText.stop();
-    // await _playSound('voice_stop');
+    await _playSound('voice_stop');
+    if (!mounted) return;
     setState(() => _isListening = false);
   }
 
-  /// Xử lý giọng nói với TFLite
+  /// ประมวลผลเสียงด้วย TFLite
   void _onSpeechResultWithTFLite(stt.SpeechRecognitionResult result) {
+    if (!mounted) return;
+
     setState(() {
       _lastWords = result.recognizedWords;
     });
@@ -735,119 +848,235 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// Xử lý lệnh giọng nói nâng cao với TFLite - UPDATED FOR NEW LABELS
+  /// ประมวลผลคำสั่งเสียงขั้นสูงด้วย TFLite
   Future<void> _processVoiceCommandWithTFLite(String command) async {
-    debugPrint('Lệnh giọng nói với TFLite: "$command"');
+    debugPrint('คำสั่งเสียงด้วย TFLite: "$command"');
 
     if (_isModelLoaded && _useTFLite) {
-      // Thử phân loại với TFLite trước
+      // ลองจำแนกด้วย TFLite ก่อน
       final topCommand = _voiceClassifier.getTopCommandFromText(command);
 
       if (topCommand != null) {
         debugPrint(
-            'TFLite phát hiện: ${topCommand.key} với độ tin cậy: ${topCommand.value}');
+            'TFLite ตรวจพบ: ${topCommand.key} ด้วยความเชื่อมั่น: ${topCommand.value}');
         await _executeCommandByLabel(topCommand.key, command);
         return;
       }
     }
 
-    // Quay lại xử lý truyền thống
+    // กลับไปประมวลผลแบบดั้งเดิม
     await _processVoiceCommand(command);
   }
 
-  /// Thực thi lệnh dựa trên nhãn TFLite - UPDATED FOR NEW LABELS
+  /// ประมวลผลคำสั่งเสียงแบบดั้งเดิม
+  Future<void> _processVoiceCommand(String command) async {
+    debugPrint('คำสั่งเสียงแบบดั้งเดิม: "$command"');
+
+    final lowerCommand = command.toLowerCase();
+    String feedback = 'ไม่เข้าใจคำสั่ง';
+
+    // คำสั่งเสียงภาษาเวียดนาม
+    if (lowerCommand.contains('mở cửa') ||
+        lowerCommand.contains('mở khóa cửa')) {
+      await _setControl('servo_angle', '90');
+      await _playSound('switch_on');
+      feedback = 'เปิดประตูแล้ว';
+    } else if (lowerCommand.contains('đóng cửa') ||
+        lowerCommand.contains('khóa cửa')) {
+      await _setControl('servo_angle', '0');
+      await _playSound('switch_off');
+      feedback = 'ปิดประตูแล้ว';
+    } else if (lowerCommand.contains('bật đèn phòng khách') ||
+        lowerCommand.contains('mở đèn phòng khách') ||
+        lowerCommand.contains('đèn phòng khách bật')) {
+      await _setControl('led1', true);
+      await _playSound('switch_on');
+      feedback = 'เปิดไฟห้องนั่งเล่นแล้ว';
+    } else if (lowerCommand.contains('tắt đèn phòng khách') ||
+        lowerCommand.contains('đóng đèn phòng khách') ||
+        lowerCommand.contains('đèn phòng khách tắt')) {
+      await _setControl('led1', false);
+      await _playSound('switch_off');
+      feedback = 'ปิดไฟห้องนั่งเล่นแล้ว';
+    } else if (lowerCommand.contains('bật đèn phòng ngủ') ||
+        lowerCommand.contains('mở đèn phòng ngủ') ||
+        lowerCommand.contains('đèn phòng ngủ bật')) {
+      await _setControl('led2', true);
+      await _playSound('switch_on');
+      feedback = 'เปิดไฟห้องนอนแล้ว';
+    } else if (lowerCommand.contains('tắt đèn phòng ngủ') ||
+        lowerCommand.contains('đóng đèn phòng ngủ') ||
+        lowerCommand.contains('đèn phòng ngủ tắt')) {
+      await _setControl('led2', false);
+      await _playSound('switch_off');
+      feedback = 'ปิดไฟห้องนอนแล้ว';
+    } else if (lowerCommand.contains('bật đèn phòng tắm') ||
+        lowerCommand.contains('mở đèn phòng tắm') ||
+        lowerCommand.contains('đèn phòng tắm bật')) {
+      await _setControl('led3', true);
+      await _playSound('switch_on');
+      feedback = 'เปิดไฟห้องน้ำแล้ว';
+    } else if (lowerCommand.contains('tắt đèn phòng tắm') ||
+        lowerCommand.contains('đóng đèn phòng tắm') ||
+        lowerCommand.contains('đèn phòng tắm tắt')) {
+      await _setControl('led3', false);
+      await _playSound('switch_off');
+      feedback = 'ปิดไฟห้องน้ำแล้ว';
+    } else if (lowerCommand.contains('bật quạt') ||
+        lowerCommand.contains('mở quạt') ||
+        lowerCommand.contains('quạt bật')) {
+      await _setControl('motor', true);
+      await _playSound('switch_on');
+      feedback = 'เปิดพัดลมแล้ว';
+    } else if (lowerCommand.contains('tắt quạt') ||
+        lowerCommand.contains('đóng quạt') ||
+        lowerCommand.contains('quạt tắt')) {
+      await _setControl('motor', false);
+      await _playSound('switch_off');
+      feedback = 'ปิดพัดลมแล้ว';
+    } else if (lowerCommand.contains('bật tất cả đèn') ||
+        lowerCommand.contains('mở tất cả đèn') ||
+        lowerCommand.contains('tất cả đèn bật')) {
+      await _toggleAllDevices(true);
+      feedback = 'เปิดไฟทั้งหมดแล้ว';
+    } else if (lowerCommand.contains('tắt tất cả đèn') ||
+        lowerCommand.contains('đóng tất cả đèn') ||
+        lowerCommand.contains('tất cả đèn tắt')) {
+      await _toggleAllDevices(false);
+      feedback = 'ปิดไฟทั้งหมดแล้ว';
+    } else if (lowerCommand.contains('mở camera') ||
+        lowerCommand.contains('bật camera') ||
+        lowerCommand.contains('xem camera')) {
+      await _startCamera();
+      feedback = 'กำลังเปิดกล้อง';
+    } else if (lowerCommand.contains('đóng camera') ||
+        lowerCommand.contains('tắt camera') ||
+        lowerCommand.contains('dừng camera')) {
+      await _stopCamera();
+      feedback = 'กำลังปิดกล้อง';
+    } else if (lowerCommand.contains('trạng thái') ||
+        lowerCommand.contains('tình trạng')) {
+      feedback =
+          'อุณหภูมิ: ${temperature?.toStringAsFixed(1) ?? "--"}°C, ความชื้น: ${humidity?.toStringAsFixed(1) ?? "--"}%';
+    }
+
+    // เพิ่มการแจ้งเตือนสำหรับคำสั่งเสียง
+    await _addNotification('คำสั่งเสียง: $command', 'voice');
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(feedback),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  /// ประมวลผลคำสั่งตามป้ายกำกับ
   Future<void> _executeCommandByLabel(
       String commandLabel, String originalCommand) async {
-    String feedback = 'Lệnh đã được thực thi';
+    String feedback = 'คำสั่งถูกดำเนินการแล้ว';
     bool commandExecuted = true;
 
     switch (commandLabel) {
       case 'bat_den':
-        await _setControl('led1', true);
-        await _playSound('switch_on');
-        feedback = 'Đã bật đèn';
-        break;
-
-      case 'tat_den':
-        await _setControl('led1', false);
-        await _playSound('switch_off');
-        feedback = 'Đã tắt đèn';
-        break;
-
       case 'bat_den_phong_khach':
         await _setControl('led1', true);
         await _playSound('switch_on');
-        feedback = 'Đã bật đèn phòng khách';
+        feedback = 'เปิดไฟห้องนั่งเล่นแล้ว';
         break;
 
+      case 'tat_den':
       case 'tat_den_phong_khach':
         await _setControl('led1', false);
         await _playSound('switch_off');
-        feedback = 'Đã tắt đèn phòng khách';
-        break;
-
-      case 'bat_den_phong_ngu':
-        await _setControl('led2', true);
-        await _playSound('switch_on');
-        feedback = 'Đã bật đèn phòng ngủ';
-        break;
-
-      case 'tat_den_phong_ngu':
-        await _setControl('led2', false);
-        await _playSound('switch_off');
-        feedback = 'Đã tắt đèn phòng ngủ';
+        feedback = 'ปิดไฟห้องนั่งเล่นแล้ว';
         break;
 
       case 'bat_quat':
         await _setControl('motor', true);
         await _playSound('switch_on');
-        feedback = 'Đã bật quạt';
+        feedback = 'เปิดพัดลมแล้ว';
         break;
 
       case 'tat_quat':
         await _setControl('motor', false);
         await _playSound('switch_off');
-        feedback = 'Đã tắt quạt';
+        feedback = 'ปิดพัดลมแล้ว';
         break;
 
       case 'mo_cua':
         await _setControl('servo_angle', '90');
         await _playSound('switch_on');
-        feedback = 'Đã mở cửa';
+        feedback = 'เปิดประตูแล้ว';
         break;
 
       case 'dong_cua':
         await _setControl('servo_angle', '0');
         await _playSound('switch_off');
-        feedback = 'Đã đóng cửa';
+        feedback = 'ปิดประตูแล้ว';
         break;
 
       case 'bat_tat_ca':
-        await _setControl('led1', true);
-        await _setControl('led2', true);
-        await _setControl('led3', true);
-        await _playSound('switch_on');
-        feedback = 'Đã bật tất cả đèn';
+        await _toggleAllDevices(true);
+        feedback = 'เปิดอุปกรณ์ทั้งหมดแล้ว';
         break;
 
       case 'tat_tat_ca':
-        await _setControl('led1', false);
+        await _toggleAllDevices(false);
+        feedback = 'ปิดอุปกรณ์ทั้งหมดแล้ว';
+        break;
+
+      case 'bat_den_phong_ngu':
+        await _setControl('led2', true);
+        await _playSound('switch_on');
+        feedback = 'เปิดไฟห้องนอนแล้ว';
+        break;
+
+      case 'tat_den_phong_ngu':
         await _setControl('led2', false);
+        await _playSound('switch_off');
+        feedback = 'ปิดไฟห้องนอนแล้ว';
+        break;
+
+      case 'bat_den_phong_bep':
+        await _setControl('led3', true);
+        await _playSound('switch_on');
+        feedback = 'เปิดไฟห้องครัวแล้ว';
+        break;
+
+      case 'tat_den_phong_bep':
         await _setControl('led3', false);
         await _playSound('switch_off');
-        feedback = 'Đã tắt tất cả đèn';
+        feedback = 'ปิดไฟห้องครัวแล้ว';
+        break;
+
+      case 'bat_camera':
+        await _startCamera();
+        feedback = 'กำลังเปิดกล้อง';
+        break;
+
+      case 'tat_camera':
+        await _stopCamera();
+        feedback = 'กำลังปิดกล้อง';
+        break;
+
+      case 'trang_thai':
+        feedback =
+            'อุณหภูมิ: ${temperature?.toStringAsFixed(1) ?? "--"}°C, ความชื้น: ${humidity?.toStringAsFixed(1) ?? "--"}%';
         break;
 
       default:
         commandExecuted = false;
-        // Quay lại xử lý truyền thống
+        // กลับไปประมวลผลแบบดั้งเดิม
         await _processVoiceCommand(originalCommand);
         return;
     }
 
     if (commandExecuted) {
-      // Thêm thông báo cho lệnh AI phát hiện
-      await _addNotification('Lệnh AI: $commandLabel', 'voice_ai');
+      // เพิ่มการแจ้งเตือนสำหรับคำสั่งที่ AI ตรวจจับ
+      await _addNotification('คำสั่ง AI: $commandLabel', 'voice_ai');
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -867,102 +1096,37 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// Xử lý lệnh giọng nói truyền thống - UPDATED FOR NEW LABELS
-  Future<void> _processVoiceCommand(String command) async {
-    debugPrint('Lệnh giọng nói truyền thống: "$command"');
+  /// เปิด/ปิดอุปกรณ์ทั้งหมด
+  Future<void> _toggleAllDevices(bool value) async {
+    try {
+      await _playSound(value ? 'switch_on' : 'switch_off');
 
-    final lowerCommand = command.toLowerCase();
-    String feedback = 'Không hiểu lệnh';
+      // ส่งคำสั่งทั้งหมดพร้อมกัน
+      await Future.wait([
+        _setControl('servo_angle', value ? '90' : '0'),
+        _setControl('led1', value),
+        _setControl('led2', value),
+        _setControl('led3', value),
+        _setControl('motor', value),
+      ]);
 
-    // Lệnh giọng nói tiếng Việt - UPDATED FOR NEW LABELS
-    if (lowerCommand.contains('mở cửa') ||
-        lowerCommand.contains('mở khóa cửa')) {
-      await _setControl('servo_angle', '90');
-      await _playSound('switch_on');
-      feedback = 'Đã mở cửa';
-    } else if (lowerCommand.contains('đóng cửa') ||
-        lowerCommand.contains('khóa cửa')) {
-      await _setControl('servo_angle', '0');
-      await _playSound('switch_off');
-      feedback = 'Đã đóng cửa';
-    } else if (lowerCommand.contains('bật đèn phòng khách') ||
-        lowerCommand.contains('mở đèn phòng khách')) {
-      await _setControl('led1', true);
-      await _playSound('switch_on');
-      feedback = 'Đã bật đèn phòng khách';
-    } else if (lowerCommand.contains('tắt đèn phòng khách') ||
-        lowerCommand.contains('đóng đèn phòng khách')) {
-      await _setControl('led1', false);
-      await _playSound('switch_off');
-      feedback = 'Đã tắt đèn phòng khách';
-    } else if (lowerCommand.contains('bật đèn phòng ngủ') ||
-        lowerCommand.contains('mở đèn phòng ngủ')) {
-      await _setControl('led2', true);
-      await _playSound('switch_on');
-      feedback = 'Đã bật đèn phòng ngủ';
-    } else if (lowerCommand.contains('tắt đèn phòng ngủ') ||
-        lowerCommand.contains('đóng đèn phòng ngủ')) {
-      await _setControl('led2', false);
-      await _playSound('switch_off');
-      feedback = 'Đã tắt đèn phòng ngủ';
-    } else if (lowerCommand.contains('bật đèn') ||
-        lowerCommand.contains('mở đèn')) {
-      await _setControl('led1', true);
-      await _playSound('switch_on');
-      feedback = 'Đã bật đèn';
-    } else if (lowerCommand.contains('tắt đèn') ||
-        lowerCommand.contains('đóng đèn')) {
-      await _setControl('led1', false);
-      await _playSound('switch_off');
-      feedback = 'Đã tắt đèn';
-    } else if (lowerCommand.contains('bật quạt') ||
-        lowerCommand.contains('mở quạt')) {
-      await _setControl('motor', true);
-      await _playSound('switch_on');
-      feedback = 'Đã bật quạt';
-    } else if (lowerCommand.contains('tắt quạt') ||
-        lowerCommand.contains('đóng quạt')) {
-      await _setControl('motor', false);
-      await _playSound('switch_off');
-      feedback = 'Đã tắt quạt';
-    } else if (lowerCommand.contains('bật tất cả đèn') ||
-        lowerCommand.contains('mở tất cả đèn')) {
-      await _setControl('led1', true);
-      await _setControl('led2', true);
-      await _setControl('led3', true);
-      await _playSound('switch_on');
-      feedback = 'Đã bật tất cả đèn';
-    } else if (lowerCommand.contains('tắt tất cả đèn') ||
-        lowerCommand.contains('đóng tất cả đèn')) {
-      await _setControl('led1', false);
-      await _setControl('led2', false);
-      await _setControl('led3', false);
-      await _playSound('switch_off');
-      feedback = 'Đã tắt tất cả đèn';
-    } else if (lowerCommand.contains('mở camera') ||
-        lowerCommand.contains('bật camera')) {
-      await _startCamera();
-      feedback = 'Đang mở camera';
-    } else if (lowerCommand.contains('đóng camera') ||
-        lowerCommand.contains('tắt camera')) {
-      await _stopCamera();
-      feedback = 'Đang đóng camera';
-    }
-
-    // Thêm thông báo cho lệnh giọng nói
-    await _addNotification('Lệnh giọng nói: $command', 'voice');
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(feedback),
-          duration: const Duration(seconds: 3),
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text(
+                  value ? 'เปิดอุปกรณ์ทั้งหมดแล้ว' : 'ปิดอุปกรณ์ทั้งหมดแล้ว')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('ข้อผิดพลาด: $e')),
+        );
+      }
     }
   }
 
-  // Thêm thông báo vào Firebase
+  // เพิ่มการแจ้งเตือนไปยัง Firebase
   Future<void> _addNotification(String message, String type) async {
     try {
       final String notificationId =
@@ -974,36 +1138,36 @@ class _HomePageState extends State<HomePage> {
         'read': false,
       });
     } catch (e) {
-      debugPrint('Lỗi thêm thông báo: $e');
+      debugPrint('ข้อผิดพลาดในการเพิ่มการแจ้งเตือน: $e');
     }
   }
 
-  // Kiểm tra cảnh báo nhiệt độ
+  // ตรวจสอบการแจ้งเตือนอุณหภูมิ
   void _checkTemperatureAlert(double? temp) {
     if (temp != null && temp > 30) {
       _addNotification(
-          '🚨 Nhiệt độ cao: ${temp.toStringAsFixed(1)}°C. Hãy bật quạt hoặc điều hòa.',
+          '🚨 อุณหภูมิสูง: ${temp.toStringAsFixed(1)}°C. กรุณาเปิดพัดลมหรือเครื่องปรับอากาศ',
           'temperature_alert');
     }
   }
 
   Future<void> _setControl(String key, dynamic value) async {
     try {
-      // Gửi lệnh đến Firebase - Raspberry Pi sẽ lắng nghe
+      // ส่งคำสัไปยัง Firebase - Raspberry Pi จะฟัง
       await _controlRef
           .child(key)
           .set(value is bool ? (value ? 'ON' : 'OFF') : value);
-      debugPrint('Lệnh điều khiển đã gửi: $key = $value');
+      debugPrint('ส่งคำสัควบคุมแล้ว: $key = $value');
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Cập nhật thất bại: $e')),
+          SnackBar(content: Text('อัปเดตล้มเหลว: $e')),
         );
       }
     }
   }
 
-  // Phương thức điều khiển camera
+  // วิธีการควบคุมกล้อง
   Future<void> _startCamera() async {
     try {
       await _cameraRef.set({
@@ -1020,7 +1184,7 @@ class _HomePageState extends State<HomePage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Lỗi khởi động camera: $e')),
+          SnackBar(content: Text('ข้อผิดพลาดในการเริ่มต้นกล้อง: $e')),
         );
       }
     }
@@ -1033,12 +1197,12 @@ class _HomePageState extends State<HomePage> {
         'timestamp': ServerValue.timestamp,
       });
     } catch (e) {
-      debugPrint('Lỗi dừng camera: $e');
+      debugPrint('ข้อผิดพลาดในการหยุดกล้อง: $e');
     }
   }
 
-  void _listenControl() {
-    _controlRef.onValue.listen((event) {
+  Future<void> _listenControl() async {
+    _controlSubscription = _controlRef.onValue.listen((event) {
       final data = event.snapshot.value;
       if (data is Map && mounted) {
         setState(() {
@@ -1053,8 +1217,8 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  void _listenCamera() {
-    _cameraRef.onValue.listen((event) {
+  Future<void> _listenCamera() async {
+    _cameraSubscription = _cameraRef.onValue.listen((event) {
       final data = event.snapshot.value;
       if (data is Map && mounted) {
         setState(() {
@@ -1064,8 +1228,8 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  void _listenSensors() {
-    _sensorsRef.onValue.listen((event) {
+  Future<void> _listenSensors() async {
+    _sensorsSubscription = _sensorsRef.onValue.listen((event) {
       final snapshotVal = event.snapshot.value;
       if (snapshotVal is Map && mounted) {
         setState(() {
@@ -1077,14 +1241,15 @@ class _HomePageState extends State<HomePage> {
                   _toDouble(snapshotVal['humidity']);
         });
 
-        // Gọi kiểm tra cảnh báo nhiệt độ
+        // เรียกตรวจสอบการแจ้งเตือนอุณหภูมิ
         _checkTemperatureAlert(temperature);
       }
     });
   }
 
-  void _listenNotifications() {
-    _notificationsRef.limitToLast(50).onValue.listen((event) {
+  Future<void> _listenNotifications() async {
+    _notificationsSubscription =
+        _notificationsRef.limitToLast(50).onValue.listen((event) {
       final snapshotVal = event.snapshot.value;
       if (snapshotVal is Map && mounted) {
         _notifications.clear();
@@ -1114,7 +1279,7 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  // Điều hướng đến trang thông báo
+  // นำทางไปยังหน้าการแจ้งเตือน
   void _navigateToNotifications() {
     Navigator.push(
       context,
@@ -1124,25 +1289,27 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // Chuyển đổi chế độ TFLite
-  void _toggleTFLiteMode(bool value) {
+  // สลับโหมด TFLite
+  void _toggleTFLiteMode() {
+    if (!_isModelLoaded) return;
+
     setState(() {
-      _useTFLite = value;
+      _useTFLite = !_useTFLite;
     });
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(_useTFLite
-              ? 'Chế độ giọng nói AI: BẬT'
-              : 'Chế độ giọng nói thường: BẬT'),
+              ? 'โหมดรู้จำเสียง AI: เปิด'
+              : 'โหมดรู้จำเสียงปกติ: เปิด'),
           duration: const Duration(seconds: 2),
         ),
       );
     }
   }
 
-  // Hàm trợ giúp chuyển đổi định dạng từ database
+  // ฟังก์ชันช่วยแปลงรูปแบบจากฐานข้อมูล
   bool _toBool(dynamic v) {
     if (v == null) return false;
     if (v is bool) return v;
@@ -1161,7 +1328,7 @@ class _HomePageState extends State<HomePage> {
     return null;
   }
 
-  // Hàm trích xuất lồng nhau
+  // ฟังก์ชันดึงข้อมูลแบบซ้อน
   dynamic _extract(Map m, List<String> path) {
     dynamic cur = m;
     for (final p in path) {
@@ -1174,20 +1341,20 @@ class _HomePageState extends State<HomePage> {
     return cur;
   }
 
-  // Hiển thị hộp thoại xác nhận đăng xuất
+  // แสดงกล่องโต้ตอบยืนยันการออกจากระบบ
   Future<void> _showLogoutDialog() async {
     return showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: const Text('Đăng xuất'),
-          content: const Text('Bạn có chắc chắn muốn đăng xuất?'),
+          title: const Text('ออกจากระบบ'),
+          content: const Text('คุณแน่ใจหรือไม่ว่าต้องการออกจากระบบ?'),
           actions: <Widget>[
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
               },
-              child: const Text('Hủy'),
+              child: const Text('ยกเลิก'),
             ),
             TextButton(
               onPressed: () {
@@ -1195,7 +1362,7 @@ class _HomePageState extends State<HomePage> {
                 _logout();
               },
               child:
-                  const Text('Đăng xuất', style: TextStyle(color: Colors.red)),
+                  const Text('ออกจากระบบ', style: TextStyle(color: Colors.red)),
             ),
           ],
         );
@@ -1207,7 +1374,7 @@ class _HomePageState extends State<HomePage> {
     await FirebaseAuth.instance.signOut();
   }
 
-  // Điều hướng đến trang cài đặt
+  // นำทางไปยังหน้าตั้งค่า
   void _navigateToSettings() {
     Navigator.push(
       context,
@@ -1215,54 +1382,54 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // Điều hướng đến trang camera
+  // นำทางไปยังหน้ากล้อง
   void _navigateToCamera() {
     _startCamera();
   }
 
-  // Lời chào dựa trên thời gian
+  // คำทักทายตามเวลา
   String getGreeting() {
     final hour = DateTime.now().hour;
-    if (hour < 12) return 'Chào buổi sáng,';
-    if (hour < 18) return 'Chào buổi chiều,';
-    return 'Chào buổi tối,';
+    if (hour < 12) return 'สวัสดีตอนเช้า,';
+    if (hour < 18) return 'สวัสดีตอนบ่าย,';
+    return 'สวัสดีตอนเย็น,';
   }
 
-  // Ngày được định dạng
+  // วันที่ที่จัดรูปแบบ
   String getFormattedDate() {
     final now = DateTime.now();
     final months = [
       '',
-      'Tháng 1',
-      'Tháng 2',
-      'Tháng 3',
-      'Tháng 4',
-      'Tháng 5',
-      'Tháng 6',
-      'Tháng 7',
-      'Tháng 8',
-      'Tháng 9',
-      'Tháng 10',
-      'Tháng 11',
-      'Tháng 12'
+      'มกราคม',
+      'กุมภาพันธ์',
+      'มีนาคม',
+      'เมษายน',
+      'พฤษภาคม',
+      'มิถุนายน',
+      'กรกฎาคม',
+      'สิงหาคม',
+      'กันยายน',
+      'ตุลาคม',
+      'พฤศจิกายน',
+      'ธันวาคม'
     ];
-    return '${now.day.toString().padLeft(2, '0')} ${months[now.month]} ${now.year}';
+    return '${now.day} ${months[now.month]} ${now.year}';
   }
 
-  // Nhãn nhiệt độ
+  // ป้ายกำกับอุณหภูมิ
   String getTempLabel(double? temp) {
     if (temp == null) return '';
-    if (temp > 25) return 'Ấm';
-    if (temp > 20) return 'Thoải mái';
-    return 'Mát';
+    if (temp > 25) return 'อุ่น';
+    if (temp > 20) return 'สบาย';
+    return 'เย็น';
   }
 
-  // Nhãn độ ẩm
+  // ป้ายกำกับความชื้น
   String getHumidityLabel(double? hum) {
     if (hum == null) return '';
-    if (hum > 60) return 'Cao';
-    if (hum > 40) return 'Bình thường';
-    return 'Thấp';
+    if (hum > 60) return 'สูง';
+    if (hum > 40) return 'ปกติ';
+    return 'ต่ำ';
   }
 
   @override
@@ -1270,7 +1437,7 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       body: Column(
         children: [
-          // Phần Header
+          // ส่วนหัว
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: Row(
@@ -1282,7 +1449,7 @@ class _HomePageState extends State<HomePage> {
                     Text(getGreeting(),
                         style: const TextStyle(
                             fontSize: 24, fontWeight: FontWeight.bold)),
-                    const Text('Nhà Thông Minh',
+                    const Text('บ้านอัจฉริยะ',
                         style: TextStyle(
                             fontSize: 24, fontWeight: FontWeight.bold)),
                   ],
@@ -1292,14 +1459,14 @@ class _HomePageState extends State<HomePage> {
                     IconButton(
                       icon: const Icon(Icons.videocam),
                       onPressed: _navigateToCamera,
-                      tooltip: 'Camera',
+                      tooltip: 'กล้อง',
                     ),
                     Stack(
                       children: [
                         IconButton(
                           icon: const Icon(Icons.notifications_none),
                           onPressed: _navigateToNotifications,
-                          tooltip: 'Thông báo',
+                          tooltip: 'การแจ้งเตือน',
                         ),
                         if (_unreadNotifications > 0)
                           Positioned(
@@ -1333,7 +1500,7 @@ class _HomePageState extends State<HomePage> {
                     IconButton(
                       icon: const Icon(Icons.settings),
                       onPressed: _navigateToSettings,
-                      tooltip: 'Cài đặt',
+                      tooltip: 'การตั้งค่า',
                     ),
                   ],
                 ),
@@ -1341,7 +1508,7 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
 
-          // Địa điểm và Ngày
+          // สถานที่และวันที่
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
             child: Card(
@@ -1352,7 +1519,7 @@ class _HomePageState extends State<HomePage> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text(
-                      'Tại Đà Nẵng',
+                      'ที่ดานัง',
                       style:
                           TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
                     ),
@@ -1368,7 +1535,7 @@ class _HomePageState extends State<HomePage> {
 
           const SizedBox(height: 16),
 
-          // Thẻ Nhiệt độ và Độ ẩm
+          // การ์ดอุณหภูมิและความชื้น
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
             child: Row(
@@ -1381,7 +1548,7 @@ class _HomePageState extends State<HomePage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Nhiệt độ'),
+                          const Text('อุณหภูมิ'),
                           Text(
                             temperature != null
                                 ? '${temperature!.toStringAsFixed(0)}°'
@@ -1404,7 +1571,7 @@ class _HomePageState extends State<HomePage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Độ ẩm'),
+                          const Text('ความชื้น'),
                           Text(
                             humidity != null
                                 ? '${humidity!.toStringAsFixed(0)}%'
@@ -1424,21 +1591,16 @@ class _HomePageState extends State<HomePage> {
 
           const SizedBox(height: 24),
 
-          // Danh sách Thiết bị
+          // รายการอุปกรณ์
+          // รายการอุปกรณ์
           Expanded(
             child: ListView(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               children: [
-                // Chuyển đổi chế độ giọng nói
+                // สลับโหมดรู้จำเสียง
                 Card(
-                  child: SwitchListTile(
-                    title: const Text('Nhận dạng giọng nói AI'),
-                    subtitle: Text(_isModelLoaded
-                        ? 'Sử dụng model TFLite cho lệnh giọng nói'
-                        : 'Model TFLite chưa được tải'),
-                    value: _useTFLite && _isModelLoaded,
-                    onChanged: _isModelLoaded ? _toggleTFLiteMode : null,
-                    secondary: Icon(
+                  child: ListTile(
+                    leading: Icon(
                       _useTFLite && _isModelLoaded
                           ? Icons.auto_awesome
                           : Icons.mic,
@@ -1446,20 +1608,31 @@ class _HomePageState extends State<HomePage> {
                           ? Colors.amber
                           : Colors.grey,
                     ),
+                    title: const Text('การรู้จำเสียง AI'),
+                    subtitle: Text(_isModelLoaded
+                        ? 'ใช้โมเดล TFLite สำหรับคำสั่งเสียง'
+                        : 'โมเดล TFLite กำลังโหลด...'),
+                    trailing: Switch(
+                      value: _useTFLite && _isModelLoaded,
+                      onChanged: _isModelLoaded
+                          ? (bool value) {
+                              _toggleTFLiteMode();
+                            }
+                          : null,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
-
-                // Phần Camera
+                // ส่วนกล้อง
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: const [
                     Text(
-                      'Camera An ninh',
+                      'กล้องรักษาความปลอดภัย',
                       style:
                           TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
-                    Text('Trực tiếp', style: TextStyle(color: Colors.green)),
+                    Text('สด', style: TextStyle(color: Colors.green)),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -1467,12 +1640,12 @@ class _HomePageState extends State<HomePage> {
                   child: ListTile(
                     leading: const Icon(Icons.videocam,
                         size: 40, color: Colors.blue),
-                    title: const Text('Camera An ninh',
+                    title: const Text('กล้องรักษาความปลอดภัย',
                         style: TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: const Text('Giám sát nhà'),
+                    subtitle: const Text('ตรวจสอบบ้าน'),
                     trailing: ElevatedButton.icon(
                       icon: const Icon(Icons.play_arrow),
-                      label: const Text('Xem trực tiếp'),
+                      label: const Text('ดูสด'),
                       onPressed: _navigateToCamera,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.blue,
@@ -1483,42 +1656,37 @@ class _HomePageState extends State<HomePage> {
                 ),
                 const SizedBox(height: 24),
 
-                // Phần Thiết bị Thông minh
+                // ส่วนอุปกรณ์อัจฉริยะ
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: const [
                     Text(
-                      'Thiết bị Thông minh',
+                      'อุปกรณ์อัจฉริยะ',
                       style:
                           TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
-                    Text('Làm mới', style: TextStyle(color: Colors.teal)),
+                    Text('รีเฟรช', style: TextStyle(color: Colors.teal)),
                   ],
                 ),
                 const SizedBox(height: 8),
 
-                // Công tắc chính cho tất cả thiết bị
+                // สวิตช์หลักสำหรับอุปกรณ์ทั้งหมด
                 Card(
                   child: SwitchListTile(
-                    title: const Text('Tất cả thiết bị'),
+                    title: const Text('อุปกรณ์ทั้งหมด'),
                     value: isDoorOn &&
                         isLivingLightOn &&
                         isBedroomLightOn &&
                         isBathroomLightOn &&
                         isFanOn,
                     onChanged: (bool value) async {
-                      await _playSound(value ? 'switch_on' : 'switch_off');
-                      _setControl('servo_angle', value ? '90' : '0');
-                      _setControl('led1', value);
-                      _setControl('led2', value);
-                      _setControl('led3', value);
-                      _setControl('motor', value);
+                      await _toggleAllDevices(value);
                     },
                   ),
                 ),
                 const SizedBox(height: 16),
 
-                // Hàng đầu tiên - Cửa và Đèn phòng khách
+                // แถวแรก - ประตูและไฟห้องนั่งเล่น
                 Row(
                   children: [
                     Expanded(
@@ -1532,7 +1700,7 @@ class _HomePageState extends State<HomePage> {
                               const Icon(Icons.door_front_door,
                                   size: 40, color: Colors.orange),
                               const SizedBox(height: 8),
-                              const Text('Cửa thông minh',
+                              const Text('ประตูอัจฉริยะ',
                                   style:
                                       TextStyle(fontWeight: FontWeight.bold)),
                               const Text('Huge Austdoor',
@@ -1570,7 +1738,7 @@ class _HomePageState extends State<HomePage> {
                               const Icon(Icons.lightbulb,
                                   size: 40, color: Colors.yellow),
                               const SizedBox(height: 8),
-                              const Text('Đèn phòng khách',
+                              const Text('ไฟห้องนั่งเล่น',
                                   style:
                                       TextStyle(fontWeight: FontWeight.bold)),
                               const Text('Zumtobel',
@@ -1599,7 +1767,7 @@ class _HomePageState extends State<HomePage> {
                 ),
                 const SizedBox(height: 16),
 
-                // Hàng thứ hai - Đèn phòng ngủ và phòng tắm
+                // แถวที่สอง - ไฟห้องนอนและห้องน้ำ
                 Row(
                   children: [
                     Expanded(
@@ -1613,7 +1781,7 @@ class _HomePageState extends State<HomePage> {
                               const Icon(Icons.lightbulb,
                                   size: 40, color: Colors.yellow),
                               const SizedBox(height: 8),
-                              const Text('Đèn phòng ngủ',
+                              const Text('ไฟห้องนอน',
                                   style:
                                       TextStyle(fontWeight: FontWeight.bold)),
                               const Text('Zumtobel',
@@ -1650,7 +1818,7 @@ class _HomePageState extends State<HomePage> {
                               const Icon(Icons.lightbulb,
                                   size: 40, color: Colors.yellow),
                               const SizedBox(height: 8),
-                              const Text('Đèn phòng tắm',
+                              const Text('ไฟห้องน้ำ',
                                   style:
                                       TextStyle(fontWeight: FontWeight.bold)),
                               const Text('Zumtobel',
@@ -1679,7 +1847,7 @@ class _HomePageState extends State<HomePage> {
                 ),
                 const SizedBox(height: 16),
 
-                // Hàng thứ ba - Quạt
+                // แถวที่สาม - พัดลม
                 Row(
                   children: [
                     Expanded(
@@ -1693,10 +1861,10 @@ class _HomePageState extends State<HomePage> {
                               const Icon(Icons.ac_unit,
                                   size: 40, color: Colors.cyan),
                               const SizedBox(height: 8),
-                              const Text('Quạt thông minh',
+                              const Text('พัดลมอัจฉริยะ',
                                   style:
                                       TextStyle(fontWeight: FontWeight.bold)),
-                              const Text('Làm mát',
+                              const Text('ทำความเย็น',
                                   style: TextStyle(color: Colors.grey)),
                               Align(
                                 alignment: Alignment.centerRight,
@@ -1726,7 +1894,7 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
 
-      // Nút điều khiển giọng nói nổi
+      // ปุ่มควบคุมเสียงลอย
       floatingActionButton: GestureDetector(
         onLongPressStart: (_) => _startListening(),
         onLongPressEnd: (_) => _stopListening(),
@@ -1754,7 +1922,7 @@ class _HomePageState extends State<HomePage> {
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
 
-      // Thanh điều hướng dưới cùng
+      // แถบนำทางด้านล่าง
       bottomNavigationBar: BottomAppBar(
         shape: const CircularNotchedRectangle(),
         notchMargin: 8.0,
@@ -1775,13 +1943,20 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    // ปิด listeners
+    _controlSubscription?.cancel();
+    _sensorsSubscription?.cancel();
+    _notificationsSubscription?.cancel();
+    _cameraSubscription?.cancel();
+
     _voiceClassifier.dispose();
+    _audioPlayer.dispose();
     super.dispose();
   }
 }
 
 // -----------------------------------------------------------------------------
-// TRANG THÔNG BÁO
+// หน้าการแจ้งเตือน
 // -----------------------------------------------------------------------------
 class NotificationsPage extends StatefulWidget {
   final List<Map<String, dynamic>> notifications;
@@ -1800,7 +1975,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Thông báo'),
+        title: const Text('การแจ้งเตือน'),
         backgroundColor: Colors.teal,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -1812,12 +1987,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
           IconButton(
             icon: const Icon(Icons.checklist),
             onPressed: _markAllAsRead,
-            tooltip: 'Đánh dấu tất cả đã đọc',
+            tooltip: 'ทำเครื่องหมายทั้งหมดว่าอ่านแล้ว',
           ),
           IconButton(
             icon: const Icon(Icons.delete_outline),
             onPressed: _showClearAllDialog,
-            tooltip: 'Xóa tất cả',
+            tooltip: 'ลบทั้งหมด',
           ),
         ],
       ),
@@ -1829,11 +2004,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
                   Icon(Icons.notifications_off, size: 64, color: Colors.grey),
                   SizedBox(height: 16),
                   Text(
-                    'Không có thông báo',
+                    'ไม่มีการแจ้งเตือน',
                     style: TextStyle(fontSize: 18, color: Colors.grey),
                   ),
                   Text(
-                    'Thông báo sẽ xuất hiện ở đây',
+                    'การแจ้งเตือนจะปรากฏที่นี่',
                     style: TextStyle(color: Colors.grey),
                   ),
                 ],
@@ -1968,7 +2143,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
         'read': true,
       });
     } catch (e) {
-      debugPrint('Lỗi đánh dấu thông báo đã đọc: $e');
+      debugPrint('ข้อผิดพลาดในการทำเครื่องหมายการแจ้งเตือนว่าอ่านแล้ว: $e');
     }
   }
 
@@ -1983,11 +2158,13 @@ class _NotificationsPageState extends State<NotificationsPage> {
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Đã đánh dấu tất cả thông báo đã đọc')),
+          const SnackBar(
+              content: Text('ทำเครื่องหมายการแจ้งเตือนทั้งหมดว่าอ่านแล้ว')),
         );
       }
     } catch (e) {
-      debugPrint('Lỗi đánh dấu tất cả thông báo đã đọc: $e');
+      debugPrint(
+          'ข้อผิดพลาดในการทำเครื่องหมายการแจ้งเตือนทั้งหมดว่าอ่านแล้ว: $e');
     }
   }
 
@@ -1995,7 +2172,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
     try {
       await _notificationsRef.child(notificationId).remove();
     } catch (e) {
-      debugPrint('Lỗi xóa thông báo: $e');
+      debugPrint('ข้อผิดพลาดในการลบการแจ้งเตือน: $e');
     }
   }
 
@@ -2004,11 +2181,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
       await _notificationsRef.remove();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Đã xóa tất cả thông báo')),
+          const SnackBar(content: Text('ลบการแจ้งเตือนทั้งหมดแล้ว')),
         );
       }
     } catch (e) {
-      debugPrint('Lỗi xóa tất cả thông báo: $e');
+      debugPrint('ข้อผิดพลาดในการลบการแจ้งเตือนทั้งหมด: $e');
     }
   }
 
@@ -2016,21 +2193,20 @@ class _NotificationsPageState extends State<NotificationsPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Xóa tất cả thông báo'),
+        title: const Text('ลบการแจ้งเตือนทั้งหมด'),
         content: const Text(
-            'Bạn có chắc chắn muốn xóa tất cả thông báo? Hành động này không thể hoàn tác.'),
+            'คุณแน่ใจหรือไม่ว่าต้องการลบการแจ้งเตือนทั้งหมด? การกระทำนี้ไม่สามารถย้อนกลับได้'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Hủy'),
+            child: const Text('ยกเลิก'),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
               _clearAllNotifications();
             },
-            child:
-                const Text('Xóa tất cả', style: TextStyle(color: Colors.red)),
+            child: const Text('ลบทั้งหมด', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -2056,25 +2232,25 @@ class _NotificationsPageState extends State<NotificationsPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Chi tiết thông báo'),
+        title: const Text('รายละเอียดการแจ้งเตือน'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Tin nhắn: $message'),
+            Text('ข้อความ: $message'),
             const SizedBox(height: 8),
-            Text('Loại: $type'),
+            Text('ประเภท: $type'),
             const SizedBox(height: 8),
-            Text('Thời gian: ${timeFormat.format(dateTime)}'),
-            Text('Ngày: ${dateFormat.format(dateTime)}'),
+            Text('เวลา: ${timeFormat.format(dateTime)}'),
+            Text('วันที่: ${dateFormat.format(dateTime)}'),
             const SizedBox(height: 8),
-            Text('Trạng thái: ${isRead ? 'Đã đọc' : 'Chưa đọc'}'),
+            Text('สถานะ: ${isRead ? 'อ่านแล้ว' : 'ยังไม่อ่าน'}'),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Đóng'),
+            child: const Text('ปิด'),
           ),
         ],
       ),
@@ -2083,7 +2259,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
 }
 
 // -----------------------------------------------------------------------------
-// TRANG CAMERA
+// หน้ากล้อง
 // -----------------------------------------------------------------------------
 class CameraStreamPage extends StatefulWidget {
   const CameraStreamPage({super.key});
@@ -2110,7 +2286,7 @@ class _CameraStreamPageState extends State<CameraStreamPage> {
       ..setNavigationDelegate(
         NavigationDelegate(
           onProgress: (int progress) {
-            debugPrint('WebView đang tải: $progress%');
+            debugPrint('WebView กำลังโหลด: $progress%');
           },
           onPageStarted: (String url) {
             setState(() {
@@ -2129,10 +2305,10 @@ class _CameraStreamPageState extends State<CameraStreamPage> {
               _hasError = true;
             });
             debugPrint('''
-Lỗi tài nguyên trang:
-  mã: ${error.errorCode}
-  mô tả: ${error.description}
-  loại lỗi: ${error.errorType}
+ข้อผิดพลาดทรัพยากรหน้า:
+  รหัส: ${error.errorCode}
+  คำอธิบาย: ${error.description}
+  ประเภทข้อผิดพลาด: ${error.errorType}
   url: ${error.url}
             ''');
           },
@@ -2156,7 +2332,7 @@ Lỗi tài nguyên trang:
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Camera An ninh'),
+        title: const Text('กล้องรักษาความปลอดภัย'),
         backgroundColor: Colors.blue,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -2168,13 +2344,13 @@ Lỗi tài nguyên trang:
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _refreshStream,
-            tooltip: 'Làm mới luồng',
+            tooltip: 'รีเฟรชสตรีม',
           ),
         ],
       ),
       body: Column(
         children: [
-          // Trạng thái Camera
+          // สถานะกล้อง
           Container(
             padding: const EdgeInsets.all(8),
             color: Colors.blue[50],
@@ -2193,7 +2369,7 @@ Lỗi tài nguyên trang:
                     ),
                     const SizedBox(width: 8),
                     const Text(
-                      'TRỰC TIẾP',
+                      'สด',
                       style: TextStyle(
                         color: Colors.green,
                         fontWeight: FontWeight.bold,
@@ -2202,7 +2378,7 @@ Lỗi tài nguyên trang:
                   ],
                 ),
                 const Text(
-                  'Camera An ninh',
+                  'กล้องรักษาความปลอดภัย',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     color: Colors.blue,
@@ -2212,7 +2388,7 @@ Lỗi tài nguyên trang:
             ),
           ),
 
-          // Luồng Camera
+          // สตรีมกล้อง
           Expanded(
             child: Stack(
               children: [
@@ -2230,7 +2406,7 @@ Lỗi tài nguyên trang:
                           ),
                           SizedBox(height: 16),
                           Text(
-                            'Đang kết nối đến camera...',
+                            'กำลังเชื่อมต่อกับกล้อง...',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 16,
@@ -2254,7 +2430,7 @@ Lỗi tài nguyên trang:
                           ),
                           const SizedBox(height: 16),
                           const Text(
-                            'Không thể kết nối đến camera',
+                            'ไม่สามารถเชื่อมต่อกับกล้องได้',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 18,
@@ -2264,7 +2440,7 @@ Lỗi tài nguyên trang:
                           const SizedBox(height: 8),
                           ElevatedButton.icon(
                             icon: const Icon(Icons.refresh),
-                            label: const Text('Thử lại kết nối'),
+                            label: const Text('ลองเชื่อมต่ออีกครั้ง'),
                             onPressed: _refreshStream,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.blue,
@@ -2285,7 +2461,7 @@ Lỗi tài nguyên trang:
 }
 
 // -----------------------------------------------------------------------------
-// TRANG CÀI ĐẶT
+// หน้าการตั้งค่า
 // -----------------------------------------------------------------------------
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -2299,12 +2475,12 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _darkMode = false;
   String _selectedLanguage = 'Tiếng Việt';
 
-  // Hàm đăng ký khuôn mặt với camera thật
+  // ฟังก์ชันลงทะเบียนใบหน้าด้วยกล้องจริง
   Future<void> _registerFace() async {
     if (cameras.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Camera không khả dụng')),
+          const SnackBar(content: Text('กล้องไม่พร้อมใช้งาน')),
         );
       }
       return;
@@ -2326,7 +2502,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Cài đặt'),
+        title: const Text('การตั้งค่า'),
         backgroundColor: Colors.teal,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -2343,18 +2519,17 @@ class _SettingsPageState extends State<SettingsPage> {
           }
 
           if (snapshot.hasError) {
-            return Center(child: Text('Lỗi: ${snapshot.error}'));
+            return Center(child: Text('ข้อผิดพลาด: ${snapshot.error}'));
           }
 
           final userData = snapshot.data?.snapshot.value as Map?;
-          final userName = userData?['name'] ?? 'Người dùng';
-          final userEmail =
-              userData?['email'] ?? user?.email ?? 'Không có email';
+          final userName = userData?['name'] ?? 'ผู้ใช้';
+          final userEmail = userData?['email'] ?? user?.email ?? 'ไม่มีอีเมล';
 
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              // Phần Hồ sơ
+              // ส่วนโปรไฟล์
               Card(
                 child: ListTile(
                   leading: CircleAvatar(
@@ -2378,7 +2553,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               const SizedBox(height: 16),
 
-              // Phần Bảo mật với đăng ký khuôn mặt
+              // ส่วนความปลอดภัยกับการลงทะเบียนใบหน้า
               Card(
                 child: Column(
                   children: [
@@ -2387,7 +2562,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       child: Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
-                          'Bảo mật',
+                          'ความปลอดภัย',
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -2398,9 +2573,9 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                     ListTile(
                       leading: const Icon(Icons.face, color: Colors.purple),
-                      title: const Text('Đăng ký khuôn mặt'),
+                      title: const Text('ลงทะเบียนใบหน้า'),
                       subtitle: const Text(
-                          'Đăng ký khuôn mặt để truy cập thông minh'),
+                          'ลงทะเบียนใบหน้าเพื่อการเข้าถึงอย่างชาญฉลาด'),
                       trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                       onTap: _registerFace,
                     ),
@@ -2409,7 +2584,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               const SizedBox(height: 16),
 
-              // Phần Cài đặt Ứng dụng
+              // ส่วนการตั้งค่าแอปพลิเคชัน
               Card(
                 child: Column(
                   children: [
@@ -2418,7 +2593,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       child: Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
-                          'Cài đặt Ứng dụng',
+                          'การตั้งค่าแอปพลิเคชัน',
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -2428,8 +2603,8 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ),
                     SwitchListTile(
-                      title: const Text('Thông báo đẩy'),
-                      subtitle: const Text('Nhận thông báo đẩy'),
+                      title: const Text('การแจ้งเตือนแบบพุช'),
+                      subtitle: const Text('รับการแจ้งเตือนแบบพุช'),
                       value: _notificationsEnabled,
                       onChanged: (bool value) {
                         setState(() {
@@ -2438,8 +2613,8 @@ class _SettingsPageState extends State<SettingsPage> {
                       },
                     ),
                     SwitchListTile(
-                      title: const Text('Chế độ tối'),
-                      subtitle: const Text('Bật chủ đề tối'),
+                      title: const Text('โหมดมืด'),
+                      subtitle: const Text('เปิดธีมมืด'),
                       value: _darkMode,
                       onChanged: (bool value) {
                         setState(() {
@@ -2448,7 +2623,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       },
                     ),
                     ListTile(
-                      title: const Text('Ngôn ngữ'),
+                      title: const Text('ภาษา'),
                       subtitle: Text(_selectedLanguage),
                       trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                       onTap: () {
@@ -2460,7 +2635,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               const SizedBox(height: 24),
 
-              // Nút Đăng xuất
+              // ปุ่มออกจากระบบ
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: ElevatedButton(
@@ -2481,7 +2656,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       Icon(Icons.logout),
                       SizedBox(width: 8),
                       Text(
-                        'Đăng xuất',
+                        'ออกจากระบบ',
                         style: TextStyle(
                             fontSize: 16, fontWeight: FontWeight.bold),
                       ),
@@ -2500,7 +2675,7 @@ class _SettingsPageState extends State<SettingsPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Chọn ngôn ngữ'),
+        title: const Text('เลือกภาษา'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -2540,19 +2715,20 @@ class _SettingsPageState extends State<SettingsPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Đăng xuất'),
-        content: const Text('Bạn có chắc chắn muốn đăng xuất?'),
+        title: const Text('ออกจากระบบ'),
+        content: const Text('คุณแน่ใจหรือไม่ว่าต้องการออกจากระบบ?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Hủy'),
+            child: const Text('ยกเลิก'),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
               FirebaseAuth.instance.signOut();
             },
-            child: const Text('Đăng xuất', style: TextStyle(color: Colors.red)),
+            child:
+                const Text('ออกจากระบบ', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -2561,7 +2737,7 @@ class _SettingsPageState extends State<SettingsPage> {
 }
 
 // -----------------------------------------------------------------------------
-// TRANG ĐĂNG KÝ KHUÔN MẶT
+// หน้าลงทะเบียนใบหน้า
 // -----------------------------------------------------------------------------
 class FaceRegistrationCameraPage extends StatefulWidget {
   @override
@@ -2580,7 +2756,7 @@ class _FaceRegistrationCameraPageState
   final int _targetImageCount = 60;
   Timer? _captureTimer;
 
-  // Lưu hình ảnh dưới dạng Base64
+  // บันทึกภาพเป็น Base64
   List<String> _base64Images = [];
 
   @override
@@ -2593,7 +2769,7 @@ class _FaceRegistrationCameraPageState
     if (cameras.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Camera không khả dụng')),
+          const SnackBar(content: Text('กล้องไม่พร้อมใช้งาน')),
         );
       }
       return;
@@ -2617,24 +2793,24 @@ class _FaceRegistrationCameraPageState
       });
     }).catchError((Object e) {
       if (e is CameraException) {
-        _showError('Lỗi camera: ${e.description}');
+        _showError('ข้อผิดพลาดกล้อง: ${e.description}');
       }
     });
   }
 
-  // Chuyển đổi hình ảnh sang Base64
+  // แปลงภาพเป็น Base64
   Future<String> _convertImageToBase64(File imageFile) async {
     try {
       final List<int> imageBytes = await imageFile.readAsBytes();
       final String base64Image = base64Encode(imageBytes);
       return base64Image;
     } catch (e) {
-      print('Lỗi chuyển đổi hình ảnh: $e');
+      print('ข้อผิดพลาดในการแปลงภาพ: $e');
       rethrow;
     }
   }
 
-  // Bắt đầu chụp ảnh liên tục
+  // เริ่มการถ่ายภาพต่อเนื่อง
   Future<void> _startContinuousCapture() async {
     if (!_isCameraReady || _isCapturing) return;
 
@@ -2644,18 +2820,18 @@ class _FaceRegistrationCameraPageState
       _base64Images.clear();
     });
 
-    // Thông báo cho người dùng di chuyển khuôn mặt
+    // แจ้งผู้ใช้ให้เคลื่อนไหวใบหน้า
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-              'Bắt đầu chụp liên tục - Vui lòng di chuyển đầu chậm ở các góc độ khác nhau'),
+              'เริ่มการถ่ายภาพต่อเนื่อง - กรุณาเคลื่อนไหวศีรษะช้าๆ ในมุมต่างๆ'),
           duration: Duration(seconds: 5),
         ),
       );
     }
 
-    // Bắt đầu chụp ảnh mỗi 0.5 giây
+    // เริ่มถ่ายภาพทุก 0.5 วินาที
     _captureTimer =
         Timer.periodic(const Duration(milliseconds: 500), (timer) async {
       if (_currentImageCount >= _targetImageCount) {
@@ -2667,7 +2843,7 @@ class _FaceRegistrationCameraPageState
     });
   }
 
-  // Dừng chụp ảnh liên tục
+  // หยุดการถ่ายภาพต่อเนื่อง
   void _stopContinuousCapture() {
     _captureTimer?.cancel();
     _captureTimer = null;
@@ -2676,23 +2852,23 @@ class _FaceRegistrationCameraPageState
       _isCapturing = false;
     });
 
-    // Thông báo cho người dùng khi chụp ảnh hoàn tất
+    // แจ้งผู้ใช้เมื่อถ่ายภาพเสร็จสิ้น
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Chụp hoàn tất! Đã lưu $_currentImageCount ảnh'),
+          content: Text('ถ่ายภาพเสร็จสิ้น! บันทึก $_currentImageCount ภาพแล้ว'),
           duration: const Duration(seconds: 3),
         ),
       );
     }
 
-    // Lưu dữ liệu khi chụp ảnh hoàn tất
+    // บันทึกข้อมูลเมื่อถ่ายภาพเสร็จสิ้น
     if (_currentImageCount >= _targetImageCount) {
       _completeRegistration();
     }
   }
 
-  // Chụp một ảnh duy nhất
+  // ถ่ายภาพเดียว
   Future<void> _captureSingleImage() async {
     if (!_isCameraReady ||
         _controller == null ||
@@ -2705,28 +2881,28 @@ class _FaceRegistrationCameraPageState
         _isProcessing = true;
       });
 
-      // Chụp hình
+      // ถ่ายภาพ
       final XFile image = await _controller!.takePicture();
       final File imageFile = File(image.path);
 
-      // Chuyển đổi hình ảnh sang Base64
+      // แปลงภาพเป็น Base64
       final String base64Image = await _convertImageToBase64(imageFile);
 
-      // Lưu Base64 image
+      // บันทึก Base64 image
       _base64Images.add(base64Image);
 
-      // Cập nhật số lượng ảnh
+      // อัปเดตจำนวนภาพ
       setState(() {
         _currentImageCount = _base64Images.length;
         _isProcessing = false;
       });
 
-      print('Đã chụp và chuyển đổi ảnh $_currentImageCount sang Base64');
+      print('ถ่ายภาพและแปลงภาพ $_currentImageCount เป็น Base64 แล้ว');
 
-      // Xóa file tạm thời
+      // ลบไฟล์ชั่วคราว
       await imageFile.delete();
     } catch (e) {
-      debugPrint('Lỗi chụp ảnh: $e');
+      debugPrint('ข้อผิดพลาดในการถ่ายภาพ: $e');
       setState(() {
         _isProcessing = false;
       });
@@ -2736,7 +2912,7 @@ class _FaceRegistrationCameraPageState
   Future<void> _completeRegistration() async {
     final User? user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      _showError('Người dùng chưa đăng nhập');
+      _showError('ผู้ใช้ยังไม่ได้เข้าสู่ระบบ');
       return;
     }
 
@@ -2745,11 +2921,11 @@ class _FaceRegistrationCameraPageState
         _isProcessing = true;
       });
 
-      // Lưu dữ liệu vào Firebase Database
+      // บันทึกข้อมูลลง Firebase Database
       final DatabaseReference userRef =
           FirebaseDatabase.instance.ref('users/${user.uid}');
 
-      // Tạo cấu trúc để lưu hình ảnh
+      // สร้างโครงสร้างสำหรับบันทึกภาพ
       Map<String, dynamic> faceImagesData = {};
 
       for (int i = 0; i < _base64Images.length; i++) {
@@ -2776,7 +2952,7 @@ class _FaceRegistrationCameraPageState
         _isProcessing = false;
       });
 
-      // Thông báo thành công
+      // แจ้งเตือนความสำเร็จ
       if (mounted) {
         showDialog(
           context: context,
@@ -2787,26 +2963,26 @@ class _FaceRegistrationCameraPageState
                 children: [
                   Icon(Icons.check_circle, color: Colors.green),
                   SizedBox(width: 8),
-                  Text('Đăng ký Thành công'),
+                  Text('ลงทะเบียนสำเร็จ'),
                 ],
               ),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('Đăng ký khuôn mặt hoàn tất thành công!'),
+                  const Text('ลงทะเบียนใบหน้าเสร็จสิ้นสำเร็จ!'),
                   const SizedBox(height: 16),
                   Text(
-                    'Đã lưu $_currentImageCount ảnh vào cơ sở dữ liệu.',
+                    'บันทึก $_currentImageCount ภาพลงฐานข้อมูลแล้ว',
                     style: const TextStyle(color: Colors.green),
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Tổng kích thước dữ liệu: ${_calculateTotalSize()} KB',
+                    'ขนาดข้อมูลทั้งหมด: ${_calculateTotalSize()} KB',
                     style: const TextStyle(fontSize: 12, color: Colors.grey),
                   ),
                   const SizedBox(height: 16),
                   const Text(
-                    'Khuôn mặt của bạn đã được đăng ký để truy cập thông minh.',
+                    'ใบหน้าของคุณถูกลงทะเบียนสำหรับการเข้าถึงอย่างชาญฉลาดแล้ว',
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 14),
                   ),
@@ -2815,10 +2991,10 @@ class _FaceRegistrationCameraPageState
               actions: [
                 TextButton(
                   onPressed: () {
-                    Navigator.pop(context); // Đóng dialog
-                    Navigator.pop(context); // Quay lại trang cài đặt
+                    Navigator.pop(context); // ปิดกล่องโต้ตอบ
+                    Navigator.pop(context); // กลับไปหน้าการตั้งค่า
                   },
-                  child: const Text('OK'),
+                  child: const Text('ตกลง'),
                 ),
               ],
             );
@@ -2829,15 +3005,15 @@ class _FaceRegistrationCameraPageState
       setState(() {
         _isProcessing = false;
       });
-      _showError('Lỗi hoàn tất đăng ký: $e');
+      _showError('ข้อผิดพลาดในการลงทะเบียนเสร็จสิ้น: $e');
     }
   }
 
-  // Mô tả góc chụp
+  // คำอธิบายมุมถ่ายภาพ
   String _getAngleDescription(int index) {
-    if (index < 20) return 'trước';
-    if (index < 40) return 'bên trái';
-    return 'bên phải';
+    if (index < 20) return 'หน้า';
+    if (index < 40) return 'ด้านซ้าย';
+    return 'ด้านขวา';
   }
 
   String _calculateTotalSize() {
@@ -2871,7 +3047,7 @@ class _FaceRegistrationCameraPageState
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Đăng ký Khuôn mặt'),
+        title: const Text('ลงทะเบียนใบหน้า'),
         backgroundColor: Colors.teal,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -2886,7 +3062,7 @@ class _FaceRegistrationCameraPageState
       ),
       body: Column(
         children: [
-          // Thanh tiến trình
+          // แถบความคืบหน้า
           LinearProgressIndicator(
             value: _currentImageCount / _targetImageCount,
             backgroundColor: Colors.grey[300],
@@ -2898,7 +3074,7 @@ class _FaceRegistrationCameraPageState
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Ảnh $_currentImageCount trên $_targetImageCount',
+                  'ภาพ $_currentImageCount จาก $_targetImageCount',
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
                 Text(
@@ -2912,7 +3088,7 @@ class _FaceRegistrationCameraPageState
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Text(
-                          'ĐANG GHI',
+                          'กำลังบันทึก',
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 12,
@@ -2920,12 +3096,12 @@ class _FaceRegistrationCameraPageState
                           ),
                         ),
                       )
-                    : const Text('Sẵn sàng'),
+                    : const Text('พร้อม'),
               ],
             ),
           ),
 
-          // Xem trước Camera
+          // ตัวอย่างกล้อง
           Expanded(
             flex: 3,
             child: Stack(
@@ -2947,7 +3123,7 @@ class _FaceRegistrationCameraPageState
                   },
                 ),
 
-                // Vòng tròn hướng dẫn khuôn mặt
+                // วงกลมแนะนำใบหน้า
                 Container(
                   width: 250,
                   height: 300,
@@ -2971,7 +3147,7 @@ class _FaceRegistrationCameraPageState
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Đặt khuôn mặt ở đây',
+                        'วางใบหน้าของคุณที่นี่',
                         style: TextStyle(
                           color: _isCapturing ? Colors.red : Colors.white,
                           fontWeight: FontWeight.bold,
@@ -2981,7 +3157,7 @@ class _FaceRegistrationCameraPageState
                   ),
                 ),
 
-                // Hướng dẫn
+                // คำแนะนำ
                 Positioned(
                   top: 20,
                   left: 0,
@@ -2997,8 +3173,8 @@ class _FaceRegistrationCameraPageState
                       children: [
                         Text(
                           _isCapturing
-                              ? 'Đang chụp... Di chuyển đầu chậm\n$_currentImageCount/$_targetImageCount ảnh'
-                              : 'Đặt khuôn mặt trong khung\nSau đó bắt đầu chụp liên tục',
+                              ? 'กำลังถ่ายภาพ... เคลื่อนไหวศีรษะช้าๆ\n$_currentImageCount/$_targetImageCount ภาพ'
+                              : 'วางใบหน้าของคุณในกรอบ\nจากนั้นเริ่มการถ่ายภาพต่อเนื่อง',
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                             color: Colors.white,
@@ -3008,7 +3184,7 @@ class _FaceRegistrationCameraPageState
                         if (!_isCapturing) ...[
                           const SizedBox(height: 8),
                           const Text(
-                            'Chúng tôi sẽ tự động chụp 60 ảnh từ các góc độ khác nhau',
+                            'เราจะถ่ายภาพ 60 ภาพจากมุมต่างๆ โดยอัตโนมัติ',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 12,
@@ -3020,7 +3196,7 @@ class _FaceRegistrationCameraPageState
                   ),
                 ),
 
-                // Chỉ báo xử lý
+                // ตัวบ่งชี้การประมวลผล
                 if (_isProcessing)
                   Container(
                     color: Colors.black54,
@@ -3034,7 +3210,7 @@ class _FaceRegistrationCameraPageState
                           ),
                           SizedBox(height: 16),
                           Text(
-                            'Đang xử lý ảnh...',
+                            'กำลังประมวลผลภาพ...',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 16,
@@ -3048,7 +3224,7 @@ class _FaceRegistrationCameraPageState
             ),
           ),
 
-          // Nút điều khiển
+          // ปุ่มควบคุม
           Expanded(
             flex: 1,
             child: Center(
@@ -3068,11 +3244,11 @@ class _FaceRegistrationCameraPageState
       children: [
         const Icon(Icons.camera_alt, size: 64, color: Colors.grey),
         const SizedBox(height: 16),
-        const Text('Camera không khả dụng'),
+        const Text('กล้องไม่พร้อมใช้งาน'),
         const SizedBox(height: 8),
         ElevatedButton(
           onPressed: _initializeCamera,
-          child: const Text('Thử lại'),
+          child: const Text('ลองอีกครั้ง'),
         ),
       ],
     );
@@ -3085,7 +3261,7 @@ class _FaceRegistrationCameraPageState
         CircularProgressIndicator(),
         SizedBox(height: 16),
         Text(
-          'Đang lưu vào cơ sở dữ liệu...',
+          'กำลังบันทึกลงฐานข้อมูล...',
           style: TextStyle(fontSize: 16),
         ),
       ],
@@ -3112,13 +3288,15 @@ class _FaceRegistrationCameraPageState
           ),
         const SizedBox(height: 16),
         Text(
-          _isCapturing ? 'Chạm để dừng chụp' : 'Chạm để bắt đầu chụp liên tục',
+          _isCapturing
+              ? 'แตะเพื่อหยุดการถ่ายภาพ'
+              : 'แตะเพื่อเริ่มการถ่ายภาพต่อเนื่อง',
           style: const TextStyle(fontSize: 16),
         ),
         if (_base64Images.isNotEmpty && !_isCapturing) ...[
           const SizedBox(height: 8),
           Text(
-            '$_currentImageCount ảnh đã sẵn sàng',
+            '$_currentImageCount ภาพพร้อมแล้ว',
             style: const TextStyle(
               fontSize: 14,
               color: Colors.green,
@@ -3134,20 +3312,20 @@ class _FaceRegistrationCameraPageState
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Thoát đăng ký?'),
+        title: const Text('ออกจากการลงทะเบียน?'),
         content: Text(
-            'Bạn có $_currentImageCount ảnh đã chụp. Bạn có chắc chắn muốn thoát?'),
+            'คุณมี $_currentImageCount ภาพที่ถ่ายแล้ว คุณแน่ใจหรือไม่ว่าต้องการออก?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Hủy'),
+            child: const Text('ยกเลิก'),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
               Navigator.pop(context);
             },
-            child: const Text('Thoát', style: TextStyle(color: Colors.red)),
+            child: const Text('ออก', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -3156,7 +3334,7 @@ class _FaceRegistrationCameraPageState
 }
 
 // -----------------------------------------------------------------------------
-// TRANG HỒ SƠ
+// หน้าโปรไฟล์
 // -----------------------------------------------------------------------------
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -3196,7 +3374,7 @@ class _ProfilePageState extends State<ProfilePage> {
         });
       }
     } catch (e) {
-      debugPrint('Lỗi tải dữ liệu người dùng: $e');
+      debugPrint('ข้อผิดพลาดในการโหลดข้อมูลผู้ใช้: $e');
     } finally {
       setState(() => _loading = false);
     }
@@ -3221,14 +3399,14 @@ class _ProfilePageState extends State<ProfilePage> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Cập nhật hồ sơ thành công')),
+          const SnackBar(content: Text('อัปเดตโปรไฟล์สำเร็จแล้ว')),
         );
         setState(() => _editing = false);
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Lỗi cập nhật hồ sơ: $e')),
+          SnackBar(content: Text('ข้อผิดพลาดในการอัปเดตโปรไฟล์: $e')),
         );
       }
     } finally {
@@ -3242,7 +3420,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Hồ sơ'),
+        title: const Text('โปรไฟล์'),
         backgroundColor: Colors.teal,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -3276,13 +3454,13 @@ class _ProfilePageState extends State<ProfilePage> {
                 }
 
                 if (snapshot.hasError) {
-                  return Center(child: Text('Lỗi: ${snapshot.error}'));
+                  return Center(child: Text('ข้อผิดพลาด: ${snapshot.error}'));
                 }
 
                 final userData = snapshot.data?.snapshot.value as Map?;
-                final currentName = userData?['name'] ?? 'Người dùng';
+                final currentName = userData?['name'] ?? 'ผู้ใช้';
                 final currentEmail =
-                    userData?['email'] ?? user?.email ?? 'Không có email';
+                    userData?['email'] ?? user?.email ?? 'ไม่มีอีเมล';
 
                 return Padding(
                   padding: const EdgeInsets.all(16),
@@ -3324,14 +3502,14 @@ class _ProfilePageState extends State<ProfilePage> {
                               TextFormField(
                                 controller: _nameController,
                                 decoration: const InputDecoration(
-                                  labelText: 'Họ và tên',
+                                  labelText: 'ชื่อและนามสกุล',
                                   prefixIcon: Icon(Icons.person),
                                   border: OutlineInputBorder(),
                                 ),
                                 enabled: _editing,
                                 validator: (value) {
                                   if (value == null || value.isEmpty) {
-                                    return 'Vui lòng nhập tên của bạn';
+                                    return 'กรุณากรอกชื่อของคุณ';
                                   }
                                   return null;
                                 },
@@ -3339,7 +3517,7 @@ class _ProfilePageState extends State<ProfilePage> {
                               const SizedBox(height: 16),
                               TextFormField(
                                 decoration: InputDecoration(
-                                  labelText: 'Email',
+                                  labelText: 'อีเมล',
                                   prefixIcon: const Icon(Icons.email),
                                   border: const OutlineInputBorder(),
                                   hintText: currentEmail,
@@ -3350,7 +3528,7 @@ class _ProfilePageState extends State<ProfilePage> {
                               TextFormField(
                                 controller: _phoneController,
                                 decoration: const InputDecoration(
-                                  labelText: 'Số điện thoại',
+                                  labelText: 'หมายเลขโทรศัพท์',
                                   prefixIcon: Icon(Icons.phone),
                                   border: OutlineInputBorder(),
                                 ),
@@ -3358,7 +3536,7 @@ class _ProfilePageState extends State<ProfilePage> {
                                 keyboardType: TextInputType.phone,
                                 validator: (value) {
                                   if (value == null || value.isEmpty) {
-                                    return 'Vui lòng nhập số điện thoại của bạn';
+                                    return 'กรุณากรอกหมายเลขโทรศัพท์ของคุณ';
                                   }
                                   return null;
                                 },
@@ -3367,7 +3545,7 @@ class _ProfilePageState extends State<ProfilePage> {
                               TextFormField(
                                 controller: _addressController,
                                 decoration: const InputDecoration(
-                                  labelText: 'Địa chỉ',
+                                  labelText: 'ที่อยู่',
                                   prefixIcon: Icon(Icons.home),
                                   border: OutlineInputBorder(),
                                 ),
@@ -3375,7 +3553,7 @@ class _ProfilePageState extends State<ProfilePage> {
                                 maxLines: 2,
                                 validator: (value) {
                                   if (value == null || value.isEmpty) {
-                                    return 'Vui lòng nhập địa chỉ của bạn';
+                                    return 'กรุณากรอกที่อยู่ของคุณ';
                                   }
                                   return null;
                                 },
@@ -3394,12 +3572,13 @@ class _ProfilePageState extends State<ProfilePage> {
                                         padding: const EdgeInsets.symmetric(
                                             horizontal: 32, vertical: 12),
                                       ),
-                                      child: const Text('Đổi mật khẩu'),
+                                      child: const Text('เปลี่ยนรหัสผ่าน'),
                                     ),
                                     const SizedBox(height: 16),
                                     TextButton(
                                       onPressed: () {},
-                                      child: const Text('Cài đặt bảo mật'),
+                                      child:
+                                          const Text('การตั้งค่าความปลอดภัย'),
                                     ),
                                   ],
                                 ),
@@ -3419,15 +3598,15 @@ class _ProfilePageState extends State<ProfilePage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Đổi mật khẩu'),
+        title: const Text('เปลี่ยนรหัสผ่าน'),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
                 decoration: const InputDecoration(
-                  labelText: 'Mật khẩu hiện tại',
-                  hintText: 'Nhập mật khẩu hiện tại',
+                  labelText: 'รหัสผ่านปัจจุบัน',
+                  hintText: 'ป้อนรหัสผ่านปัจจุบัน',
                   border: OutlineInputBorder(),
                 ),
                 obscureText: true,
@@ -3435,8 +3614,8 @@ class _ProfilePageState extends State<ProfilePage> {
               const SizedBox(height: 16),
               TextField(
                 decoration: const InputDecoration(
-                  labelText: 'Mật khẩu mới',
-                  hintText: 'Nhập mật khẩu mới',
+                  labelText: 'รหัสผ่านใหม่',
+                  hintText: 'ป้อนรหัสผ่านใหม่',
                   border: OutlineInputBorder(),
                 ),
                 obscureText: true,
@@ -3444,8 +3623,8 @@ class _ProfilePageState extends State<ProfilePage> {
               const SizedBox(height: 16),
               TextField(
                 decoration: const InputDecoration(
-                  labelText: 'Xác nhận mật khẩu mới',
-                  hintText: 'Xác nhận mật khẩu mới',
+                  labelText: 'ยืนยันรหัสผ่านใหม่',
+                  hintText: 'ยืนยันรหัสผ่านใหม่',
                   border: OutlineInputBorder(),
                 ),
                 obscureText: true,
@@ -3456,16 +3635,16 @@ class _ProfilePageState extends State<ProfilePage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Hủy'),
+            child: const Text('ยกเลิก'),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Đã đổi mật khẩu thành công')),
+                const SnackBar(content: Text('เปลี่ยนรหัสผ่านสำเร็จแล้ว')),
               );
             },
-            child: const Text('Đổi mật khẩu'),
+            child: const Text('เปลี่ยนรหัสผ่าน'),
           ),
         ],
       ),

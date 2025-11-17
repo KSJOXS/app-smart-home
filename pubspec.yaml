@@ -9,17 +9,20 @@ environment:
 
 dependencies:
   flutter:
-   sdk: flutter
+    sdk: flutter
 
   # Basic UI
   cupertino_icons: ^1.0.8
+  tflite_flutter: ^0.12.1
+
+  
 
   # Image and camera utilities
   image_picker: ^1.1.2
-  camera: ^0.10.5             # ✅ อัปเดต/เพิ่ม camera
+  camera: ^0.10.5
   path_provider: ^2.1.4
   path: ^1.9.0
-  webview_flutter: ^4.4.2    # ✅ เพิ่ม webview_flutter
+  webview_flutter: ^4.4.2
 
   # Firebase core libraries (latest stable versions)
   firebase_core: ^3.3.0
@@ -29,24 +32,19 @@ dependencies:
 
   intl: ^0.19.0
 
-  # ==========================================
-  # 💡 NEW: Voice Command & Video Streaming
-  # ==========================================
-  # สำหรับการสั่งงานด้วยเสียง (Speech-to-Text)
+  # Voice Command & Video Streaming
   speech_to_text: ^7.3.0
-
-# audio
   audioplayers: ^5.2.1
-  
-  # สำหรับการเล่นสตรีมวิดีโอจาก Raspberry Pi (รองรับ RTSP)
-  # ใช้ flutter_vlc_player เพราะรองรับ RTSP/HLS ได้ดีกว่า video_player ทั่วไป
-  flutter_vlc_player: ^7.4.2 
-  # ==========================================
+  flutter_vlc_player: ^7.4.2
 
 dev_dependencies:
   flutter_test:
-   sdk: flutter
+    sdk: flutter
   flutter_lints: ^5.0.0
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/models/
+    - assets/models/
+  

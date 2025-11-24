@@ -33,7 +33,7 @@ Future<void> main() async {
 }
 
 // -----------------------------------------------------------------------------
-// Phân loại giọng nói TFLite - COMPLETELY UPDATED VERSION
+// Phân loại giọng nói TFLite - UPDATED WITH NEW LABELS
 // -----------------------------------------------------------------------------
 class VoiceClassifier {
   static const String modelFile = 'model.tflite';
@@ -48,7 +48,7 @@ class VoiceClassifier {
       // Tải model
       _interpreter = await Interpreter.fromAsset(modelFile);
 
-      // Tải nhãn
+      // Tải nhãn - UPDATED WITH NEW LABELS
       _labels = await _loadLabelsFromAssets();
 
       _isLoaded = true;
@@ -67,20 +67,18 @@ class VoiceClassifier {
   }
 
   Future<List<String>> _loadLabelsFromAssets() async {
-    // ใช้ labels ตามไฟล์ voice_labels.txt ของคุณ
+    // Updated labels based on your voice_labels.txt
     return [
-      'bat_den',
-      'tat_den',
       'bat_quat',
       'tat_quat',
-      'mo_cua',
-      'dong_cua',
       'bat_tat_ca',
       'tat_tat_ca',
       'bat_den_phong_khach',
       'tat_den_phong_khach',
       'bat_den_phong_ngu',
-      'tat_den_phong_ngu'
+      'tat_den_phong_ngu',
+      'tat_den_phong_bep',
+      'bat_den_phong_bep'
     ];
   }
 
@@ -145,48 +143,49 @@ class VoiceClassifier {
     }
   }
 
-  // Phân loại từ lệnh văn bản (dự phòng) - UPDATED FOR NEW LABELS
+  // Phân loại từ lệnh văn bản (dự phòng) - UPDATED WITH NEW LABELS
   Map<String, double> classifyTextCommand(String textCommand) {
     final lowerCommand = textCommand.toLowerCase();
     Map<String, double> results = {};
 
-    // Khớp từ khóa với điểm tin cậy - UPDATED FOR NEW LABELS
-    if (lowerCommand.contains('bật đèn phòng khách') ||
-        lowerCommand.contains('mở đèn phòng khách')) {
-      results['bat_den_phong_khach'] = 0.95;
-    } else if (lowerCommand.contains('tắt đèn phòng khách') ||
-        lowerCommand.contains('đóng đèn phòng khách')) {
-      results['tat_den_phong_khach'] = 0.95;
-    } else if (lowerCommand.contains('bật đèn phòng ngủ') ||
-        lowerCommand.contains('mở đèn phòng ngủ')) {
-      results['bat_den_phong_ngu'] = 0.95;
-    } else if (lowerCommand.contains('tắt đèn phòng ngủ') ||
-        lowerCommand.contains('đóng đèn phòng ngủ')) {
-      results['tat_den_phong_ngu'] = 0.95;
-    } else if (lowerCommand.contains('bật đèn') ||
-        lowerCommand.contains('mở đèn')) {
-      results['bat_den'] = 0.90;
-    } else if (lowerCommand.contains('tắt đèn') ||
-        lowerCommand.contains('đóng đèn')) {
-      results['tat_den'] = 0.90;
-    } else if (lowerCommand.contains('bật quạt') ||
-        lowerCommand.contains('mở quạt')) {
-      results['bat_quat'] = 0.85;
+    // Khớp từ khóa với điểm tin cậy - UPDATED WITH NEW LABELS
+    if (lowerCommand.contains('bật quạt') || lowerCommand.contains('mở quạt')) {
+      results['bat_quat'] = 0.95;
     } else if (lowerCommand.contains('tắt quạt') ||
         lowerCommand.contains('đóng quạt')) {
-      results['tat_quat'] = 0.85;
-    } else if (lowerCommand.contains('mở cửa') ||
-        lowerCommand.contains('mở khóa cửa')) {
-      results['mo_cua'] = 0.80;
-    } else if (lowerCommand.contains('đóng cửa') ||
-        lowerCommand.contains('khóa cửa')) {
-      results['dong_cua'] = 0.80;
+      results['tat_quat'] = 0.95;
     } else if (lowerCommand.contains('bật tất cả') ||
-        lowerCommand.contains('mở tất cả')) {
-      results['bat_tat_ca'] = 0.75;
+        lowerCommand.contains('mở tất cả') ||
+        lowerCommand.contains('bật tất cả đèn') ||
+        lowerCommand.contains('mở tất cả đèn')) {
+      results['bat_tat_ca'] = 0.90;
     } else if (lowerCommand.contains('tắt tất cả') ||
-        lowerCommand.contains('đóng tất cả')) {
-      results['tat_tat_ca'] = 0.75;
+        lowerCommand.contains('đóng tất cả') ||
+        lowerCommand.contains('tắt tất cả đèn') ||
+        lowerCommand.contains('đóng tất cả đèn')) {
+      results['tat_tat_ca'] = 0.90;
+    } else if (lowerCommand.contains('bật đèn phòng khách') ||
+        lowerCommand.contains('mở đèn phòng khách')) {
+      results['bat_den_phong_khach'] = 0.85;
+    } else if (lowerCommand.contains('tắt đèn phòng khách') ||
+        lowerCommand.contains('đóng đèn phòng khách')) {
+      results['tat_den_phong_khach'] = 0.85;
+    } else if (lowerCommand.contains('bật đèn phòng ngủ') ||
+        lowerCommand.contains('mở đèn phòng ngủ')) {
+      results['bat_den_phong_ngu'] = 0.85;
+    } else if (lowerCommand.contains('tắt đèn phòng ngủ') ||
+        lowerCommand.contains('đóng đèn phòng ngủ')) {
+      results['tat_den_phong_ngu'] = 0.85;
+    } else if (lowerCommand.contains('bật đèn phòng bếp') ||
+        lowerCommand.contains('mở đèn phòng bếp') ||
+        lowerCommand.contains('bật đèn bếp') ||
+        lowerCommand.contains('mở đèn bếp')) {
+      results['bat_den_phong_bep'] = 0.85;
+    } else if (lowerCommand.contains('tắt đèn phòng bếp') ||
+        lowerCommand.contains('đóng đèn phòng bếp') ||
+        lowerCommand.contains('tắt đèn bếp') ||
+        lowerCommand.contains('đóng đèn bếp')) {
+      results['tat_den_phong_bep'] = 0.85;
     }
 
     return results;
@@ -225,7 +224,6 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // แก้ไขจาก CardTheme เป็น CardThemeData
     final cardStyle = CardThemeData(
       elevation: 4,
       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
@@ -599,7 +597,7 @@ class _HomePageState extends State<HomePage> {
   bool isDoorOn = false;
   bool isLivingLightOn = false;
   bool isBedroomLightOn = false;
-  bool isBathroomLightOn = false;
+  bool isKitchenLightOn = false;
   bool isFanOn = false;
   bool isCameraOn = false;
 
@@ -696,7 +694,6 @@ class _HomePageState extends State<HomePage> {
   /// Bắt đầu lắng nghe đầu vào giọng nói
   void _startListening() async {
     if (!_speechEnabled) return;
-    // await _playSound('voice_start');
 
     setState(() {
       _isListening = true;
@@ -715,7 +712,6 @@ class _HomePageState extends State<HomePage> {
   /// Dừng lắng nghe đầu vào giọng nói
   void _stopListening() async {
     await _speechToText.stop();
-    // await _playSound('voice_stop');
     setState(() => _isListening = false);
   }
 
@@ -735,7 +731,7 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// Xử lý lệnh giọng nói nâng cao với TFLite - UPDATED FOR NEW LABELS
+  /// Xử lý lệnh giọng nói nâng cao với TFLite - UPDATED WITH NEW LABELS
   Future<void> _processVoiceCommandWithTFLite(String command) async {
     debugPrint('Lệnh giọng nói với TFLite: "$command"');
 
@@ -755,23 +751,39 @@ class _HomePageState extends State<HomePage> {
     await _processVoiceCommand(command);
   }
 
-  /// Thực thi lệnh dựa trên nhãn TFLite - UPDATED FOR NEW LABELS
+  /// Thực thi lệnh dựa trên nhãn TFLite - UPDATED WITH NEW LABELS
   Future<void> _executeCommandByLabel(
       String commandLabel, String originalCommand) async {
     String feedback = 'Lệnh đã được thực thi';
     bool commandExecuted = true;
 
     switch (commandLabel) {
-      case 'bat_den':
-        await _setControl('led1', true);
+      case 'bat_quat':
+        await _setControl('motor', true);
         await _playSound('switch_on');
-        feedback = 'Đã bật đèn';
+        feedback = 'Đã bật quạt';
         break;
 
-      case 'tat_den':
-        await _setControl('led1', false);
+      case 'tat_quat':
+        await _setControl('motor', false);
         await _playSound('switch_off');
-        feedback = 'Đã tắt đèn';
+        feedback = 'Đã tắt quạt';
+        break;
+
+      case 'bat_tat_ca':
+        await _setControl('led1', true);
+        await _setControl('led2', true);
+        await _setControl('led3', true);
+        await _playSound('switch_on');
+        feedback = 'Đã bật tất cả đèn';
+        break;
+
+      case 'tat_tat_ca':
+        await _setControl('led1', false);
+        await _setControl('led2', false);
+        await _setControl('led3', false);
+        await _playSound('switch_off');
+        feedback = 'Đã tắt tất cả đèn';
         break;
 
       case 'bat_den_phong_khach':
@@ -798,44 +810,16 @@ class _HomePageState extends State<HomePage> {
         feedback = 'Đã tắt đèn phòng ngủ';
         break;
 
-      case 'bat_quat':
-        await _setControl('motor', true);
-        await _playSound('switch_on');
-        feedback = 'Đã bật quạt';
-        break;
-
-      case 'tat_quat':
-        await _setControl('motor', false);
-        await _playSound('switch_off');
-        feedback = 'Đã tắt quạt';
-        break;
-
-      case 'mo_cua':
-        await _setControl('servo_angle', '90');
-        await _playSound('switch_on');
-        feedback = 'Đã mở cửa';
-        break;
-
-      case 'dong_cua':
-        await _setControl('servo_angle', '0');
-        await _playSound('switch_off');
-        feedback = 'Đã đóng cửa';
-        break;
-
-      case 'bat_tat_ca':
-        await _setControl('led1', true);
-        await _setControl('led2', true);
+      case 'bat_den_phong_bep':
         await _setControl('led3', true);
         await _playSound('switch_on');
-        feedback = 'Đã bật tất cả đèn';
+        feedback = 'Đã bật đèn phòng bếp';
         break;
 
-      case 'tat_tat_ca':
-        await _setControl('led1', false);
-        await _setControl('led2', false);
+      case 'tat_den_phong_bep':
         await _setControl('led3', false);
         await _playSound('switch_off');
-        feedback = 'Đã tắt tất cả đèn';
+        feedback = 'Đã tắt đèn phòng bếp';
         break;
 
       default:
@@ -867,24 +851,41 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// Xử lý lệnh giọng nói truyền thống - UPDATED FOR NEW LABELS
+  /// Xử lý lệnh giọng nói truyền thống - UPDATED WITH NEW LABELS
   Future<void> _processVoiceCommand(String command) async {
     debugPrint('Lệnh giọng nói truyền thống: "$command"');
 
     final lowerCommand = command.toLowerCase();
     String feedback = 'Không hiểu lệnh';
 
-    // Lệnh giọng nói tiếng Việt - UPDATED FOR NEW LABELS
-    if (lowerCommand.contains('mở cửa') ||
-        lowerCommand.contains('mở khóa cửa')) {
-      await _setControl('servo_angle', '90');
+    // Lệnh giọng nói tiếng Việt - UPDATED WITH NEW LABELS
+    if (lowerCommand.contains('bật quạt') || lowerCommand.contains('mở quạt')) {
+      await _setControl('motor', true);
       await _playSound('switch_on');
-      feedback = 'Đã mở cửa';
-    } else if (lowerCommand.contains('đóng cửa') ||
-        lowerCommand.contains('khóa cửa')) {
-      await _setControl('servo_angle', '0');
+      feedback = 'Đã bật quạt';
+    } else if (lowerCommand.contains('tắt quạt') ||
+        lowerCommand.contains('đóng quạt')) {
+      await _setControl('motor', false);
       await _playSound('switch_off');
-      feedback = 'Đã đóng cửa';
+      feedback = 'Đã tắt quạt';
+    } else if (lowerCommand.contains('bật tất cả đèn') ||
+        lowerCommand.contains('mở tất cả đèn') ||
+        lowerCommand.contains('bật tất cả') ||
+        lowerCommand.contains('mở tất cả')) {
+      await _setControl('led1', true);
+      await _setControl('led2', true);
+      await _setControl('led3', true);
+      await _playSound('switch_on');
+      feedback = 'Đã bật tất cả đèn';
+    } else if (lowerCommand.contains('tắt tất cả đèn') ||
+        lowerCommand.contains('đóng tất cả đèn') ||
+        lowerCommand.contains('tắt tất cả') ||
+        lowerCommand.contains('đóng tất cả')) {
+      await _setControl('led1', false);
+      await _setControl('led2', false);
+      await _setControl('led3', false);
+      await _playSound('switch_off');
+      feedback = 'Đã tắt tất cả đèn';
     } else if (lowerCommand.contains('bật đèn phòng khách') ||
         lowerCommand.contains('mở đèn phòng khách')) {
       await _setControl('led1', true);
@@ -905,40 +906,30 @@ class _HomePageState extends State<HomePage> {
       await _setControl('led2', false);
       await _playSound('switch_off');
       feedback = 'Đã tắt đèn phòng ngủ';
-    } else if (lowerCommand.contains('bật đèn') ||
-        lowerCommand.contains('mở đèn')) {
-      await _setControl('led1', true);
-      await _playSound('switch_on');
-      feedback = 'Đã bật đèn';
-    } else if (lowerCommand.contains('tắt đèn') ||
-        lowerCommand.contains('đóng đèn')) {
-      await _setControl('led1', false);
-      await _playSound('switch_off');
-      feedback = 'Đã tắt đèn';
-    } else if (lowerCommand.contains('bật quạt') ||
-        lowerCommand.contains('mở quạt')) {
-      await _setControl('motor', true);
-      await _playSound('switch_on');
-      feedback = 'Đã bật quạt';
-    } else if (lowerCommand.contains('tắt quạt') ||
-        lowerCommand.contains('đóng quạt')) {
-      await _setControl('motor', false);
-      await _playSound('switch_off');
-      feedback = 'Đã tắt quạt';
-    } else if (lowerCommand.contains('bật tất cả đèn') ||
-        lowerCommand.contains('mở tất cả đèn')) {
-      await _setControl('led1', true);
-      await _setControl('led2', true);
+    } else if (lowerCommand.contains('bật đèn phòng bếp') ||
+        lowerCommand.contains('mở đèn phòng bếp') ||
+        lowerCommand.contains('bật đèn bếp') ||
+        lowerCommand.contains('mở đèn bếp')) {
       await _setControl('led3', true);
       await _playSound('switch_on');
-      feedback = 'Đã bật tất cả đèn';
-    } else if (lowerCommand.contains('tắt tất cả đèn') ||
-        lowerCommand.contains('đóng tất cả đèn')) {
-      await _setControl('led1', false);
-      await _setControl('led2', false);
+      feedback = 'Đã bật đèn phòng bếp';
+    } else if (lowerCommand.contains('tắt đèn phòng bếp') ||
+        lowerCommand.contains('đóng đèn phòng bếp') ||
+        lowerCommand.contains('tắt đèn bếp') ||
+        lowerCommand.contains('đóng đèn bếp')) {
       await _setControl('led3', false);
       await _playSound('switch_off');
-      feedback = 'Đã tắt tất cả đèn';
+      feedback = 'Đã tắt đèn phòng bếp';
+    } else if (lowerCommand.contains('mở cửa') ||
+        lowerCommand.contains('mở khóa cửa')) {
+      await _setControl('servo_angle', '90');
+      await _playSound('switch_on');
+      feedback = 'Đã mở cửa';
+    } else if (lowerCommand.contains('đóng cửa') ||
+        lowerCommand.contains('khóa cửa')) {
+      await _setControl('servo_angle', '0');
+      await _playSound('switch_off');
+      feedback = 'Đã đóng cửa';
     } else if (lowerCommand.contains('mở camera') ||
         lowerCommand.contains('bật camera')) {
       await _startCamera();
@@ -1044,7 +1035,7 @@ class _HomePageState extends State<HomePage> {
         setState(() {
           isLivingLightOn = _toBool(data['led1']);
           isBedroomLightOn = _toBool(data['led2']);
-          isBathroomLightOn = _toBool(data['led3']);
+          isKitchenLightOn = _toBool(data['led3']);
           isFanOn = _toBool(data['motor']);
           final angle = data['servo_angle'];
           isDoorOn = (angle != "0");
@@ -1504,7 +1495,7 @@ class _HomePageState extends State<HomePage> {
                     value: isDoorOn &&
                         isLivingLightOn &&
                         isBedroomLightOn &&
-                        isBathroomLightOn &&
+                        isKitchenLightOn &&
                         isFanOn,
                     onChanged: (bool value) async {
                       await _playSound(value ? 'switch_on' : 'switch_off');
@@ -1599,7 +1590,7 @@ class _HomePageState extends State<HomePage> {
                 ),
                 const SizedBox(height: 16),
 
-                // Hàng thứ hai - Đèn phòng ngủ và phòng tắm
+                // Hàng thứ hai - Đèn phòng ngủ và phòng bếp
                 Row(
                   children: [
                     Expanded(
@@ -1650,7 +1641,7 @@ class _HomePageState extends State<HomePage> {
                               const Icon(Icons.lightbulb,
                                   size: 40, color: Colors.yellow),
                               const SizedBox(height: 8),
-                              const Text('Đèn phòng tắm',
+                              const Text('Đèn phòng bếp',
                                   style:
                                       TextStyle(fontWeight: FontWeight.bold)),
                               const Text('Zumtobel',
@@ -1661,7 +1652,7 @@ class _HomePageState extends State<HomePage> {
                                   onLongPressStart: (_) => _startListening(),
                                   onLongPressEnd: (_) => _stopListening(),
                                   child: Switch(
-                                    value: isBathroomLightOn,
+                                    value: isKitchenLightOn,
                                     onChanged: (bool value) async {
                                       await _playSound(
                                           value ? 'switch_on' : 'switch_off');
@@ -2141,7 +2132,7 @@ Lỗi tài nguyên trang:
           },
         ),
       )
-      ..loadRequest(Uri.parse('http://192.168.1.16:5000'));
+      ..loadRequest(Uri.parse('http://10.83.56.116:5000'));
   }
 
   Future<void> _refreshStream() async {

@@ -10,32 +10,25 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  firebase_core: ^2.24
-
-  # Basic UI
   cupertino_icons: ^1.0.8
-  tflite_flutter: ^0.12.1
 
-  
-
-  # Image and camera utilities
-  image_picker: ^1.1.2
-  camera: ^0.10.5
-  path_provider: ^2.1.4
-  path: ^1.9.0
-  webview_flutter: ^4.4.2
-
-  # Firebase core libraries (latest stable versions)
+  # Firebase (chỉ giữ phiên bản mới nhất)
   firebase_core: ^3.3.0
   firebase_auth: ^5.3.0
-  firebase_storage: ^12.3.0
   firebase_database: ^11.1.0
 
-  intl: ^0.19.0
+  # AI & Machine Learning
+  tflite_flutter: ^0.12.1
 
-  # Voice Command & Video Streaming
+  # Image and camera utilities
+  camera: ^0.10.5
+  webview_flutter: ^4.4.2
+
+  # Audio & Media
   audioplayers: ^5.2.1
-  flutter_vlc_player: ^7.4.2
+
+  # Utilities
+  intl: ^0.19.0
 
 dev_dependencies:
   flutter_test:
@@ -44,7 +37,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  assets:
-    - assets/models/
-    - assets/models/
   
+  assets:
+    - assets/model.tflite
+    - assets/sounds/

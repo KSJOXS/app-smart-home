@@ -1,157 +1,157 @@
-import 'dart:developer';
 import 'package:tflite_flutter/tflite_flutter.dart';
 
-/// Lớp VoiceClassifier:  
-/// - Tải và sử dụng model TensorFlow Lite để phân loại lệnh giọng nói
-/// - Hỗ trợ phân loại lệnh dạng văn bản
-/// - Cung cấp phương thức lấy lệnh có xác suất cao nhất
 class VoiceClassifier {
   static const String modelFile = 'model.tflite';
-  static const String labelFile = 'voice_labels.txt';
-
+  
   late Interpreter _interpreter;
-  late List<String> _labels;
   bool _isLoaded = false;
+  
+  // Các lớp theo model train của bạn
+  final List<String> _labels = [
+    'bat_quat',
+    'tat_quat', 
+    'bat_tat_ca',
+    'tat_tat_ca',
+    'bat_den_phong_khach',
+    'tat_den_phong_khach',
+    'bat_den_phong_ngu',
+    'tat_den_phong_ngu',
+    'bat_den_phong_bep',
+    'tat_den_phong_bep',
+  ];
 
   Future<void> loadModel() async {
     try {
       _interpreter = await Interpreter.fromAsset(modelFile);
-      _labels = await _loadLabelsFromAssets();
-      _isLoaded = true;
-      log('Đã tải model giọng nói thành công');
-      log('Nhãn: $_labels');
-
+      
+      // Debug model info
       var inputTensors = _interpreter.getInputTensors();
       var outputTensors = _interpreter.getOutputTensors();
-      log('Input tensors: $inputTensors');
-      log('Output tensors: $outputTensors');
+      print('Input tensors: $inputTensors');
+      print('Output tensors: $outputTensors');
+      
+      _isLoaded = true;
+      print('✅ Đã tải model CNN thành công với ${_labels.length} lớp');
     } catch (e) {
-      log('Lỗi tải model giọng nói: $e');
+      print('❌ Lỗi tải model: $e');
       _isLoaded = false;
     }
   }
 
-  Future<List<String>> _loadLabelsFromAssets() async {
-    return [
-      'bat_den',
-      'tat_den',
-      'bat_quat',
-      'tat_quat',
-      'mo_cua',
-      'dong_cua',
-      'bat_tat_ca',
-      'tat_tat_ca',
-      'bat_den_phong_khach',
-      'tat_den_phong_khach',
-      'bat_den_phong_ngu',
-      'tat_den_phong_ngu'
-    ];
-  }
-
-  List<List<double>> _preprocessAudio(List<double> audioData) {
+  // Xử lý audio features từ ghi âm
+  List<List<List<List<double>>>> _preprocessAudioFeatures(List<double> audioData) {
     try {
-      const int inputLength = 16000;
-      List<List<double>> processedInput = [];
-      List<double> processedAudio = List<double>.filled(inputLength, 0.0);
-      int length = audioData.length < inputLength ? audioData.length : inputLength;
-
-      for (int i = 0; i < length; i++) {
-        processedAudio[i] = audioData[i];
+      // Giả lập dữ liệu mel-spectrogram đầu vào
+      // THAY THẾ PHẦN NÀY BẰNG XỬ LÝ THẬT TỪ AUDIO RECORDING
+      const int nMels = 64;
+      const int timeFrames = 128;
+      const int channels = 2;
+      
+      List<List<List<List<double>>>> processedInput = [];
+      List<List<List<double>>> melData = [];
+      
+      // Tạo dữ liệu mel-spectrogram giả lập
+      for (int i = 0; i < nMels; i++) {
+        List<List<double>> timeData = [];
+        for (int j = 0; j < timeFrames; j++) {
+          List<double> channelData = [];
+          for (int k = 0; k < channels; k++) {
+            // Sử dụng audioData nếu có, nếu không dùng giá trị mặc định
+            double value = audioData.isNotEmpty 
+                ? audioData[(i * timeFrames + j) % audioData.length] 
+                : 0.0;
+            channelData.add(value);
+          }
+          timeData.add(channelData);
+        }
+        melData.add(timeData);
       }
-
-      processedInput.add(processedAudio);
+      
+      processedInput.add(melData);
       return processedInput;
     } catch (e) {
-      log('Lỗi xử lý âm thanh: $e');
-      return [List<double>.filled(16000, 0.0)];
+      print('Lỗi xử lý audio features: $e');
+      return _createEmptyInput();
     }
   }
 
-  Map<String, double> classifyVoiceCommand(List<double> audioFeatures) {
+  List<List<List<List<double>>>> _createEmptyInput() {
+    const int nMels = 64;
+    const int timeFrames = 128;
+    const int channels = 2;
+    
+    List<List<List<List<double>>>> emptyInput = [];
+    List<List<List<double>>> melData = [];
+    
+    for (int i = 0; i < nMels; i++) {
+      List<List<double>> timeData = [];
+      for (int j = 0; j < timeFrames; j++) {
+        List<double> channelData = List<double>.filled(channels, 0.0);
+        timeData.add(channelData);
+      }
+      melData.add(timeData);
+    }
+    
+    emptyInput.add(melData);
+    return emptyInput;
+  }
+
+  // Dự đoán từ audio features
+  Map<String, double> predictCommand(List<double> audioFeatures) {
     if (!_isLoaded) {
-      log('Model chưa được tải');
+      print('Model chưa được tải');
       return {};
     }
 
     try {
-      final input = _preprocessAudio(audioFeatures);
+      // Xử lý đầu vào
+      final input = _preprocessAudioFeatures(audioFeatures);
+      
+      // Chuẩn bị bộ đệm đầu ra
       var outputBuffer = List<double>.filled(_labels.length, 0.0);
+      
+      // Chạy suy luận
       _interpreter.run(input, outputBuffer);
-
-      log('Kết quả raw: $outputBuffer');
-
-      final Map<String, double> labeledProb = {};
+      
+      print('Kết quả raw: $outputBuffer');
+      
+      // Xử lý kết quả
+      final Map<String, double> predictions = {};
+      double maxConfidence = 0.0;
+      String topCommand = '';
+      
       for (int i = 0; i < outputBuffer.length && i < _labels.length; i++) {
-        labeledProb[_labels[i]] = outputBuffer[i];
+        double confidence = outputBuffer[i];
+        predictions[_labels[i]] = confidence;
+        
+        if (confidence > maxConfidence) {
+          maxConfidence = confidence;
+          topCommand = _labels[i];
+        }
       }
-
-      log('Kết quả phân loại: $labeledProb');
-      return labeledProb;
+      
+      print('Dự đoán: $topCommand với độ tin cậy: ${(maxConfidence * 100).toStringAsFixed(1)}%');
+      
+      return predictions;
     } catch (e) {
-      log('Lỗi trong quá trình phân loại giọng nói: $e');
+      print('Lỗi trong quá trình dự đoán: $e');
       return {};
     }
   }
 
-  Map<String, double> classifyTextCommand(String textCommand) {
-    final lowerCommand = textCommand.toLowerCase();
-    Map<String, double> results = {};
-
-    if (lowerCommand.contains('bật đèn phòng khách') ||
-        lowerCommand.contains('mở đèn phòng khách')) {
-      results['bat_den_phong_khach'] = 0.95;
-    } else if (lowerCommand.contains('tắt đèn phòng khách') ||
-        lowerCommand.contains('đóng đèn phòng khách')) {
-      results['tat_den_phong_khach'] = 0.95;
-    } else if (lowerCommand.contains('bật đèn phòng ngủ') ||
-        lowerCommand.contains('mở đèn phòng ngủ')) {
-      results['bat_den_phong_ngu'] = 0.95;
-    } else if (lowerCommand.contains('tắt đèn phòng ngủ') ||
-        lowerCommand.contains('đóng đèn phòng ngủ')) {
-      results['tat_den_phong_ngu'] = 0.95;
-    } else if (lowerCommand.contains('bật đèn') ||
-        lowerCommand.contains('mở đèn')) {
-      results['bat_den'] = 0.90;
-    } else if (lowerCommand.contains('tắt đèn') ||
-        lowerCommand.contains('đóng đèn')) {
-      results['tat_den'] = 0.90;
-    } else if (lowerCommand.contains('bật quạt') ||
-        lowerCommand.contains('mở quạt')) {
-      results['bat_quat'] = 0.85;
-    } else if (lowerCommand.contains('tắt quạt') ||
-        lowerCommand.contains('đóng quạt')) {
-      results['tat_quat'] = 0.85;
-    } else if (lowerCommand.contains('mở cửa') ||
-        lowerCommand.contains('mở khóa cửa')) {
-      results['mo_cua'] = 0.80;
-    } else if (lowerCommand.contains('đóng cửa') ||
-        lowerCommand.contains('khóa cửa')) {
-      results['dong_cua'] = 0.80;
-    } else if (lowerCommand.contains('bật tất cả') ||
-        lowerCommand.contains('mở tất cả')) {
-      results['bat_tat_ca'] = 0.75;
-    } else if (lowerCommand.contains('tắt tất cả') ||
-        lowerCommand.contains('đóng tất cả')) {
-      results['tat_tat_ca'] = 0.75;
-    }
-
-    return results;
-  }
-
+  // Lấy lệnh có độ tin cậy cao nhất
   MapEntry<String, double>? getTopCommand(List<double> audioFeatures) {
-    final results = classifyVoiceCommand(audioFeatures);
-    return _getTopResult(results);
+    final predictions = predictCommand(audioFeatures);
+    return _getTopPrediction(predictions);
   }
 
-  MapEntry<String, double>? getTopCommandFromText(String textCommand) {
-    final results = classifyTextCommand(textCommand);
-    return _getTopResult(results);
-  }
-
-  MapEntry<String, double>? _getTopResult(Map<String, double> results) {
-    if (results.isEmpty) return null;
-    var topEntry = results.entries.reduce((a, b) => a.value > b.value ? a : b);
-    return topEntry.value > 0.6 ? topEntry : null;
+  MapEntry<String, double>? _getTopPrediction(Map<String, double> predictions) {
+    if (predictions.isEmpty) return null;
+    
+    var topEntry = predictions.entries.reduce((a, b) => a.value > b.value ? a : b);
+    
+    // Chỉ chấp nhận nếu độ tin cậy > 40%
+    return topEntry.value > 0.4 ? topEntry : null;
   }
 
   bool get isLoaded => _isLoaded;

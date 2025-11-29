@@ -39,8 +39,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _initializeServices() async {
-    await _voiceService.initSpeech();
-    await _voiceService.loadModel();
+    await _voiceService.init();
+    _voiceService.setOnResultCallback(_handleVoiceResult);
   }
 
   void _setupListeners() {
@@ -62,7 +62,6 @@ class _HomePageState extends State<HomePage> {
       final snapshotVal = event.snapshot.value;
       if (snapshotVal is Map && mounted) {
         setState(() {
-          // Fix: Extract from nested structure
           final sensorsData = snapshotVal['sensors'] ?? snapshotVal;
           temperature = DatabaseService.toDouble(sensorsData['temperature']);
           humidity = DatabaseService.toDouble(sensorsData['humidity']);
@@ -101,6 +100,24 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  // Xử lý kết quả từ voice service
+  void _handleVoiceResult(Map<String, dynamic> result) {
+    if (result['success'] == true) {
+      _executeVoiceCommand(result);
+    } else {
+      // Hiển thị thông báo lỗi
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['message'] ?? 'Không nhận diện được lệnh nói'),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
   void _checkTemperatureAlert(double? temp) {
     if (temp != null && temp > 30) {
       DatabaseService.addNotification(
@@ -112,19 +129,32 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _executeVoiceCommand(Map<String, dynamic> commandData) async {
     final String command = commandData['command'];
-    final String original = commandData['original'];
-    final String type = commandData['type'];
+    final double confidence = commandData['confidence'];
 
     String feedback = 'Lệnh đã được thực thi';
 
     switch (command) {
-      case 'mo_cua':
-        await DatabaseService.setControl('servo_angle', '90');
-        feedback = 'Đã mở cửa';
+      case 'bat_quat':
+        await DatabaseService.setControl('motor', true);
+        feedback = 'Đã bật quạt';
         break;
-      case 'dong_cua':
-        await DatabaseService.setControl('servo_angle', '0');
-        feedback = 'Đã đóng cửa';
+      case 'tat_quat':
+        await DatabaseService.setControl('motor', false);
+        feedback = 'Đã tắt quạt';
+        break;
+      case 'bat_tat_ca':
+        await DatabaseService.setControl('led1', true);
+        await DatabaseService.setControl('led2', true);
+        await DatabaseService.setControl('led3', true);
+        await DatabaseService.setControl('motor', true);
+        feedback = 'Đã bật tất cả thiết bị';
+        break;
+      case 'tat_tat_ca':
+        await DatabaseService.setControl('led1', false);
+        await DatabaseService.setControl('led2', false);
+        await DatabaseService.setControl('led3', false);
+        await DatabaseService.setControl('motor', false);
+        feedback = 'Đã tắt tất cả thiết bị';
         break;
       case 'bat_den_phong_khach':
         await DatabaseService.setControl('led1', true);
@@ -142,63 +172,37 @@ class _HomePageState extends State<HomePage> {
         await DatabaseService.setControl('led2', false);
         feedback = 'Đã tắt đèn phòng ngủ';
         break;
-      case 'bat_den':
-        await DatabaseService.setControl('led1', true);
-        feedback = 'Đã bật đèn';
-        break;
-      case 'tat_den':
-        await DatabaseService.setControl('led1', false);
-        feedback = 'Đã tắt đèn';
-        break;
-      case 'bat_quat':
-        await DatabaseService.setControl('motor', true);
-        feedback = 'Đã bật quạt';
-        break;
-      case 'tat_quat':
-        await DatabaseService.setControl('motor', false);
-        feedback = 'Đã tắt quạt';
-        break;
-      case 'bat_tat_ca':
-        await DatabaseService.setControl('led1', true);
-        await DatabaseService.setControl('led2', true);
+      case 'bat_den_phong_bep':
         await DatabaseService.setControl('led3', true);
-        feedback = 'Đã bật tất cả đèn';
+        feedback = 'Đã bật đèn phòng bếp';
         break;
-      case 'tat_tat_ca':
-        await DatabaseService.setControl('led1', false);
-        await DatabaseService.setControl('led2', false);
+      case 'tat_den_phong_bep':
         await DatabaseService.setControl('led3', false);
-        feedback = 'Đã tắt tất cả đèn';
-        break;
-      case 'mo_camera':
-        _navigateToCamera();
-        feedback = 'Đang mở camera';
-        break;
-      case 'dong_camera':
-        await DatabaseService.stopCamera();
-        feedback = 'Đang đóng camera';
+        feedback = 'Đã tắt đèn phòng bếp';
         break;
       default:
         feedback = 'Không hiểu lệnh';
     }
 
     // Add notification
-    await DatabaseService.addNotification(
-      'Lệnh giọng nói${type == 'ai' ? ' (AI)' : ''}: $original',
-      type == 'ai' ? 'voice_ai' : 'voice',
-    );
+    if (command != 'unknown') {
+      await DatabaseService.addNotification(
+        'Lệnh giọng nói (CNN): $command (${(confidence * 100).toStringAsFixed(1)}%)',
+        'voice_cnn',
+      );
+    }
 
     if (mounted && command != 'unknown') {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(
             children: [
-              if (type == 'ai') Icon(Icons.auto_awesome, color: Colors.yellow[700]),
-              if (type == 'ai') const SizedBox(width: 8),
-              Text(feedback),
+              Icon(Icons.auto_awesome, color: Colors.yellow[700]),
+              const SizedBox(width: 8),
+              Text('$feedback (${(confidence * 100).toStringAsFixed(1)}%)'),
             ],
           ),
-          backgroundColor: type == 'ai' ? Colors.green[800] : null,
+          backgroundColor: Colors.green[800],
           duration: const Duration(seconds: 3),
         ),
       );
@@ -287,30 +291,13 @@ class _HomePageState extends State<HomePage> {
 
   // Voice control methods
   Future<void> _startListening() async {
-    await _voiceService.startListening((command) async {
-      final commandData = await _voiceService.processVoiceCommand(command);
-      await _executeVoiceCommand(commandData);
-    });
+    await _voiceService.startRecording();
     setState(() {});
   }
 
   Future<void> _stopListening() async {
-    await _voiceService.stopListening();
+    await _voiceService.stopRecording();
     setState(() {});
-  }
-
-  void _toggleTFLiteMode(bool value) {
-    _voiceService.toggleTFLiteMode(value);
-    setState(() {});
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(_voiceService.useTFLite
-            ? 'Chế độ giọng nói AI: BẬT'
-            : 'Chế độ giọng nói thường: BẬT'),
-        duration: const Duration(seconds: 2),
-      ),
-    );
   }
 
   @override
@@ -457,23 +444,34 @@ class _HomePageState extends State<HomePage> {
             child: ListView(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               children: [
-                // AI Voice Mode Toggle
+                // AI Voice Model Status
                 Card(
-                  child: SwitchListTile(
+                  child: ListTile(
+                    leading: Icon(
+                      _voiceService.isModelLoaded ? Icons.check_circle : Icons.error,
+                      color: _voiceService.isModelLoaded ? Colors.green : Colors.orange,
+                    ),
                     title: const Text('Nhận dạng giọng nói AI'),
                     subtitle: Text(_voiceService.isModelLoaded
-                        ? 'Sử dụng model TFLite cho lệnh giọng nói'
-                        : 'Model TFLite chưa được tải'),
-                    value: _voiceService.useTFLite && _voiceService.isModelLoaded,
-                    onChanged: _voiceService.isModelLoaded ? _toggleTFLiteMode : null,
-                    secondary: Icon(
-                      _voiceService.useTFLite && _voiceService.isModelLoaded
-                          ? Icons.auto_awesome
-                          : Icons.mic,
-                      color: _voiceService.useTFLite && _voiceService.isModelLoaded
-                          ? Colors.amber
-                          : Colors.grey,
-                    ),
+                        ? 'Model CNN đã sẵn sàng (10 lớp)'
+                        : 'Đang tải model...'),
+                    trailing: _voiceService.isRecording 
+                        ? Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Text(
+                              'ĐANG GHI ÂM',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          )
+                        : null,
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -649,7 +647,7 @@ class _HomePageState extends State<HomePage> {
                             children: [
                               const Icon(Icons.lightbulb, size: 40, color: Colors.yellow),
                               const SizedBox(height: 8),
-                              const Text('Đèn phòng tắm', style: TextStyle(fontWeight: FontWeight.bold)),
+                              const Text('Đèn phòng bếp', style: TextStyle(fontWeight: FontWeight.bold)),
                               const Text('Zumtobel', style: TextStyle(color: Colors.grey)),
                               Align(
                                 alignment: Alignment.centerRight,
@@ -720,21 +718,17 @@ class _HomePageState extends State<HomePage> {
         onLongPressEnd: (_) => _stopListening(),
         child: FloatingActionButton(
           onPressed: () {
-            if (_voiceService.isListening) {
+            if (_voiceService.isRecording) {
               _stopListening();
             } else {
               _startListening();
             }
           },
           shape: const CircleBorder(),
-          backgroundColor: _voiceService.isListening
-              ? Colors.redAccent
-              : (_voiceService.useTFLite ? Colors.amber : Colors.teal),
+          backgroundColor: _voiceService.isRecording ? Colors.redAccent : Colors.teal,
           foregroundColor: Colors.white,
           child: Icon(
-            _voiceService.isListening
-                ? Icons.mic_off
-                : (_voiceService.useTFLite ? Icons.auto_awesome : Icons.mic),
+            _voiceService.isRecording ? Icons.mic_off : Icons.mic,
             size: 30,
           ),
         ),

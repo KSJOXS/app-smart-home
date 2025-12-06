@@ -774,16 +774,18 @@ class _HomePageState extends State<HomePage> {
         await _setControl('led1', true);
         await _setControl('led2', true);
         await _setControl('led3', true);
+        await _setControl('motor', true); // ADDED: Control fan too
         await _playSound('switch_on');
-        feedback = 'Đã bật tất cả đèn';
+        feedback = 'Đã bật tất cả đèn và quạt';
         break;
 
       case 'tat_tat_ca':
         await _setControl('led1', false);
         await _setControl('led2', false);
         await _setControl('led3', false);
+        await _setControl('motor', false); // ADDED: Control fan too
         await _playSound('switch_off');
-        feedback = 'Đã tắt tất cả đèn';
+        feedback = 'Đã tắt tất cả đèn và quạt';
         break;
 
       case 'bat_den_phong_khach':
@@ -875,8 +877,9 @@ class _HomePageState extends State<HomePage> {
       await _setControl('led1', true);
       await _setControl('led2', true);
       await _setControl('led3', true);
+      await _setControl('motor', true); // ADDED: Control fan too
       await _playSound('switch_on');
-      feedback = 'Đã bật tất cả đèn';
+      feedback = 'Đã bật tất cả đèn và quạt';
     } else if (lowerCommand.contains('tắt tất cả đèn') ||
         lowerCommand.contains('đóng tất cả đèn') ||
         lowerCommand.contains('tắt tất cả') ||
@@ -884,8 +887,9 @@ class _HomePageState extends State<HomePage> {
       await _setControl('led1', false);
       await _setControl('led2', false);
       await _setControl('led3', false);
+      await _setControl('motor', false); // ADDED: Control fan too
       await _playSound('switch_off');
-      feedback = 'Đã tắt tất cả đèn';
+      feedback = 'Đã tắt tất cả đèn và quạt';
     } else if (lowerCommand.contains('bật đèn phòng khách') ||
         lowerCommand.contains('mở đèn phòng khách')) {
       await _setControl('led1', true);
@@ -1420,26 +1424,26 @@ class _HomePageState extends State<HomePage> {
             child: ListView(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               children: [
-                // Chuyển đổi chế độ giọng nói
-                Card(
-                  child: SwitchListTile(
-                    title: const Text('Nhận dạng giọng nói AI'),
-                    subtitle: Text(_isModelLoaded
-                        ? 'Sử dụng model TFLite cho lệnh giọng nói'
-                        : 'Model TFLite chưa được tải'),
-                    value: _useTFLite && _isModelLoaded,
-                    onChanged: _isModelLoaded ? _toggleTFLiteMode : null,
-                    secondary: Icon(
-                      _useTFLite && _isModelLoaded
-                          ? Icons.auto_awesome
-                          : Icons.mic,
-                      color: _useTFLite && _isModelLoaded
-                          ? Colors.amber
-                          : Colors.grey,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
+                // REMOVED: Chuyển đổi chế độ giọng nói AI UI
+                // Card(
+                //   child: SwitchListTile(
+                //     title: const Text('Nhận dạng giọng nói AI'),
+                //     subtitle: Text(_isModelLoaded
+                //         ? 'Sử dụng model TFLite cho lệnh giọng nói'
+                //         : 'Model TFLite chưa được tải'),
+                //     value: _useTFLite && _isModelLoaded,
+                //     onChanged: _isModelLoaded ? _toggleTFLiteMode : null,
+                //     secondary: Icon(
+                //       _useTFLite && _isModelLoaded
+                //           ? Icons.auto_awesome
+                //           : Icons.mic,
+                //       color: _useTFLite && _isModelLoaded
+                //           ? Colors.amber
+                //           : Colors.grey,
+                //     ),
+                //   ),
+                // ),
+                // const SizedBox(height: 16),
 
                 // Phần Camera
                 Row(

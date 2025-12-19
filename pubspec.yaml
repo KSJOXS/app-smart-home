@@ -10,25 +10,26 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  #chart
+  fl_chart: ^0.64.0
 
   # Basic UI
   cupertino_icons: ^1.0.8
   tflite_flutter: ^0.12.1
 
-  
-
   # Image and camera utilities
   image_picker: ^1.1.2
-  camera: ^0.10.5
+  camera: ^0.10.5+2
   path_provider: ^2.1.4
   path: ^1.9.0
   webview_flutter: ^4.4.2
 
-  # Firebase core libraries (latest stable versions)
-  firebase_core: ^3.3.0
-  firebase_auth: ^5.3.0
-  firebase_storage: ^12.3.0
-  firebase_database: ^11.1.0
+  # Firebase core libraries - ใช้เวอร์ชันที่เข้ากันได้
+  firebase_core: ^2.20.0  # แก้จาก ^2.24.3 เป็น ^2.20.0
+  firebase_auth: ^4.10.0  # แก้จาก ^4.17.3 เป็น ^4.10.0
+  firebase_storage: ^11.2.0  # แก้จาก ^11.3.4 เป็น ^11.2.0
+  firebase_database: ^10.2.0  # แก้จาก ^10.3.5 เป็น ^10.2.0
+  cloud_firestore: ^4.8.0  # แก้จาก ^4.15.2 เป็น ^4.8.0 
 
   intl: ^0.19.0
 
@@ -36,6 +37,13 @@ dependencies:
   speech_to_text: ^7.3.0
   audioplayers: ^5.2.1
   flutter_vlc_player: ^7.4.2
+
+  # เพิ่ม dependencies ที่จำเป็นสำหรับ smart home app
+  provider: ^6.1.1  # สำหรับ state management
+  iconsax: ^0.0.8  # สำหรับ icons ที่ทันสมัย
+  shimmer: ^3.0.0  # สำหรับ loading effect
+  http: ^1.1.2  # สำหรับ API calls
+  # google_ml_kit: ^0.15.0  # ลบออกชั่วคราว ถ้ามีปัญหา
 
 dev_dependencies:
   flutter_test:
@@ -46,5 +54,5 @@ flutter:
   uses-material-design: true
   assets:
     - assets/models/
-    - assets/models/
-  
+    - assets/images/  # เพิ่ม folder สำหรับ images
+    - assets/icons/   # เพิ่ม folder สำหรับ icons

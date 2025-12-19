@@ -4,8 +4,9 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath("com.android.tools.build:gradle:8.1.0")
-        classpath("com.google.gms:google-services:4.3.15")
+        // บรรทัด 7-8:
+        classpath("com.android.tools.build:gradle:8.5.0")  // อัปเกรดจาก 8.1.0
+        classpath("com.google.gms:google-services:4.4.2")  // อัปเกรดจาก 4.3.15
       
     }
 }

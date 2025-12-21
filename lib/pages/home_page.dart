@@ -362,7 +362,6 @@ class _HomePageState extends State<HomePage> {
                 value.toString() == '90'),
       });
 
-      // 3. บันทึกสรุปประจำวัน
       await _updateDailySummary(dateKey, deviceId);
 
       print('📊 Recorded usage for $deviceId on $dateKey');
@@ -376,7 +375,6 @@ class _HomePageState extends State<HomePage> {
       final ref = FirebaseDatabase.instance.ref();
       final user = FirebaseAuth.instance.currentUser;
 
-      // ดึงข้อมูลสถิติปัจจุบัน
       final snapshot = await ref.child('daily_summary/$dateKey').get();
       Map<String, dynamic> summaryData = {};
 
@@ -384,7 +382,6 @@ class _HomePageState extends State<HomePage> {
         summaryData = Map<String, dynamic>.from(snapshot.value as Map);
       }
 
-      // อัปเดตข้อมูลอุปกรณ์
       if (!summaryData.containsKey('devices')) {
         summaryData['devices'] = {};
       }
@@ -393,7 +390,6 @@ class _HomePageState extends State<HomePage> {
       devices[deviceId] = (devices[deviceId] ?? 0) + 1;
       summaryData['devices'] = devices;
 
-      // อัปเดตจำนวนการใช้งานทั้งหมด
       summaryData['total_usage'] = (summaryData['total_usage'] ?? 0) + 1;
 
       // อัปเดตเวลาล่าสุด
@@ -516,24 +512,6 @@ class _HomePageState extends State<HomePage> {
       await _voiceService.playSound('switch_off');
       await _setControl('led3', false);
       feedback = 'Kitchen light turned off';
-    } else if (lowerCommand.contains('mở cửa') ||
-        lowerCommand.contains('mở khóa cửa')) {
-      await _voiceService.playSound('switch_on');
-      await _setControl('servo_angle', '90');
-      feedback = 'Door opened';
-      isDoorCommand = true;
-      action = 'opened';
-    } else if (lowerCommand.contains('đóng cửa') ||
-        lowerCommand.contains('khóa cửa')) {
-      await _voiceService.playSound('switch_off');
-      await _setControl('servo_angle', '0');
-      feedback = 'Door closed';
-      isDoorCommand = true;
-      action = 'closed';
-    }
-
-    if (isDoorCommand) {
-      await _addDoorNotification(action, command);
     }
 
     if (mounted) {

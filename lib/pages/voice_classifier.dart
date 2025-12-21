@@ -1,7 +1,7 @@
 import 'package:tflite_flutter/tflite_flutter.dart';
 import 'dart:async';
 
-// Phân loại giọng nói TFLite - UPDATED WITH NEW LABELS
+// Phân loại giọng nói TFLite - UPDATED TO IGNORE DOOR COMMANDS
 class VoiceClassifier {
   static const String modelFile = 'model.tflite';
   static const String labelFile = 'voice_labels.txt';
@@ -34,7 +34,6 @@ class VoiceClassifier {
   }
 
   Future<List<String>> _loadLabelsFromAssets() async {
-    // Updated labels based on your voice_labels.txt
     return [
       'bat_quat',
       'tat_quat',
@@ -52,12 +51,9 @@ class VoiceClassifier {
   // Xử lý trước âm thanh - SIMPLIFIED VERSION
   List<List<double>> _preprocessAudio(List<double> audioData) {
     try {
-      const int inputLength = 16000; // Default for speech models
+      const int inputLength = 16000;
 
-      // Tạo mảng 2D với hình dạng phù hợp cho model
       List<List<double>> processedInput = [];
-
-      // Xử lý đơn giản - đệm hoặc cắt ngắn đến độ dài mong đợi
       List<double> processedAudio = List<double>.filled(inputLength, 0.0);
       int length =
           audioData.length < inputLength ? audioData.length : inputLength;
@@ -66,9 +62,7 @@ class VoiceClassifier {
         processedAudio[i] = audioData[i];
       }
 
-      // Định hình lại cho đầu vào model
       processedInput.add(processedAudio);
-
       return processedInput;
     } catch (e) {
       print('Lỗi xử lý âm thanh: $e');
@@ -84,20 +78,13 @@ class VoiceClassifier {
     }
 
     try {
-      // Xử lý trước âm thanh
       final input = _preprocessAudio(audioFeatures);
-
-      // Chuẩn bị bộ đệm đầu ra
       var outputBuffer = List<double>.filled(_labels.length, 0.0);
 
-      // Chạy suy luận
       _interpreter.run(input, outputBuffer);
-
       print('Kết quả raw: $outputBuffer');
 
-      // Xử lý kết quả
       final Map<String, double> labeledProb = {};
-
       for (int i = 0; i < outputBuffer.length && i < _labels.length; i++) {
         labeledProb[_labels[i]] = outputBuffer[i];
       }
@@ -110,26 +97,28 @@ class VoiceClassifier {
     }
   }
 
-  // Phân loại từ lệnh văn bản (dự phòng) - UPDATED WITH NEW LABELS
+  // Phân loại từ lệnh văn bản (dự phòng) - UPDATED TO IGNORE "CỬA"
   Map<String, double> classifyTextCommand(String textCommand) {
     final lowerCommand = textCommand.toLowerCase();
+
+    // NEW: If command contains "cửa" (door), stop processing to avoid wrong triggers
+    if (lowerCommand.contains('cửa')) {
+      print('Lệnh liên quan đến cửa bị từ chối.');
+      return {};
+    }
+
     Map<String, double> results = {};
 
-    // Khớp từ khóa với điểm tin cậy - UPDATED WITH NEW LABELS
     if (lowerCommand.contains('bật quạt') || lowerCommand.contains('mở quạt')) {
       results['bat_quat'] = 0.95;
     } else if (lowerCommand.contains('tắt quạt') ||
         lowerCommand.contains('đóng quạt')) {
       results['tat_quat'] = 0.95;
     } else if (lowerCommand.contains('bật tất cả') ||
-        lowerCommand.contains('mở tất cả') ||
-        lowerCommand.contains('bật tất cả đèn') ||
-        lowerCommand.contains('mở tất cả đèn')) {
+        lowerCommand.contains('mở tất cả')) {
       results['bat_tat_ca'] = 0.90;
     } else if (lowerCommand.contains('tắt tất cả') ||
-        lowerCommand.contains('đóng tất cả') ||
-        lowerCommand.contains('tắt tất cả đèn') ||
-        lowerCommand.contains('đóng tất cả đèn')) {
+        lowerCommand.contains('đóng tất cả')) {
       results['tat_tat_ca'] = 0.90;
     } else if (lowerCommand.contains('bật đèn phòng khách') ||
         lowerCommand.contains('mở đèn phòng khách')) {
@@ -144,14 +133,10 @@ class VoiceClassifier {
         lowerCommand.contains('đóng đèn phòng ngủ')) {
       results['tat_den_phong_ngu'] = 0.85;
     } else if (lowerCommand.contains('bật đèn phòng bếp') ||
-        lowerCommand.contains('mở đèn phòng bếp') ||
-        lowerCommand.contains('bật đèn bếp') ||
-        lowerCommand.contains('mở đèn bếp')) {
+        lowerCommand.contains('mở đèn phòng bếp')) {
       results['bat_den_phong_bep'] = 0.85;
     } else if (lowerCommand.contains('tắt đèn phòng bếp') ||
-        lowerCommand.contains('đóng đèn phòng bếp') ||
-        lowerCommand.contains('tắt đèn bếp') ||
-        lowerCommand.contains('đóng đèn bếp')) {
+        lowerCommand.contains('đóng đèn phòng bếp')) {
       results['tat_den_phong_bep'] = 0.85;
     }
 
@@ -168,12 +153,14 @@ class VoiceClassifier {
     return _getTopResult(results);
   }
 
+  // Updated to 0.75 confidence to ignore ambient noise like door opening/closing sounds
   MapEntry<String, double>? _getTopResult(Map<String, double> results) {
     if (results.isEmpty) return null;
 
     var topEntry = results.entries.reduce((a, b) => a.value > b.value ? a : b);
 
-    return topEntry.value > 0.6 ? topEntry : null;
+    // Filter by higher threshold to avoid False Positives
+    return topEntry.value > 0.75 ? topEntry : null;
   }
 
   bool get isLoaded => _isLoaded;
